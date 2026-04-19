@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "249112152808",
+    "project_id": "nacurutu-seguridad",
+    "storage_bucket": "nacurutu-seguridad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:249112152808:android:cc8f98c511854c62e5175d",
+        "android_client_info": {
+          "package_name": "net.aranduinformatica.nacurutu"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDbpRx9yZpYUovMVSJKJ44vxPcr_0AfZ9M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -39,6 +39,7 @@ from push import (
     get_vapid_public_key,
     send_push_to_admins,
     build_subscription_doc,
+    build_fcm_token_doc,
 )
 from seed import seed_initial_data
 
@@ -113,6 +114,8 @@ async def startup():
     await db.alerts.create_index("timestamp")
     await db.push_subscriptions.create_index("endpoint", unique=True)
     await db.push_subscriptions.create_index("user_id")
+    await db.fcm_tokens.create_index("token", unique=True)
+    await db.fcm_tokens.create_index("user_id")
     ensure_vapid_keys()
     await seed_initial_data(db)
     logger.info("Startup seeding complete")
@@ -566,6 +569,31 @@ async def push_unsubscribe(payload: dict, user: dict = Depends(get_current_user)
     if not endpoint:
         raise HTTPException(status_code=400, detail="endpoint required")
     await db.push_subscriptions.delete_one({"endpoint": endpoint, "user_id": user["id"]})
+    return {"ok": True}
+
+
+@api.post("/push/fcm-register")
+async def push_fcm_register(payload: dict, user: dict = Depends(get_current_user)):
+    """Register FCM token from native app (Android/iOS)."""
+    token = payload.get("token")
+    platform = payload.get("platform", "android")
+    if not token:
+        raise HTTPException(status_code=400, detail="token required")
+    doc = build_fcm_token_doc(user, token, platform)
+    await db.fcm_tokens.update_one(
+        {"token": token},
+        {"$set": doc},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.post("/push/fcm-unregister")
+async def push_fcm_unregister(payload: dict, user: dict = Depends(get_current_user)):
+    token = payload.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="token required")
+    await db.fcm_tokens.delete_one({"token": token, "user_id": user["id"]})
     return {"ok": True}
 
 

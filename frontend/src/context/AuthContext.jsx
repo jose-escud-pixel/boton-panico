@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import api from "../lib/api";
+import { isNative, registerNativePush } from "../lib/nativePush";
 
 const AuthContext = createContext(null);
 
@@ -12,6 +13,10 @@ export function AuthProvider({ children }) {
       try {
         const { data } = await api.get("/auth/me");
         setUser(data);
+        // Si estamos en app nativa, registrar FCM al recuperar sesión
+        if (isNative()) {
+          registerNativePush().catch(() => {});
+        }
       } catch {
         setUser(false);
       } finally {
@@ -26,6 +31,10 @@ export function AuthProvider({ children }) {
       localStorage.setItem("access_token", data.access_token);
     }
     setUser(data.user);
+    // Auto-registro FCM en native después del login
+    if (isNative()) {
+      registerNativePush().catch(() => {});
+    }
     return data.user;
   };
 
