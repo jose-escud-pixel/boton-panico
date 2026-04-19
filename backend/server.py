@@ -117,6 +117,12 @@ async def startup():
     await db.fcm_tokens.create_index("token", unique=True)
     await db.fcm_tokens.create_index("user_id")
     ensure_vapid_keys()
+    # Inicializar Firebase de forma explícita al arrancar para ver errores de inmediato
+    from push import _init_firebase
+    if _init_firebase():
+        logger.info("✅ Firebase OK — FCM listo para notificaciones nativas")
+    else:
+        logger.warning("⚠️ Firebase NO inicializado — FCM no enviará. Verifica backend/.firebase/service-account.json")
     await seed_initial_data(db)
     logger.info("Startup seeding complete")
 
