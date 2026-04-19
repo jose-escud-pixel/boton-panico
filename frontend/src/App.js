@@ -12,6 +12,8 @@ import Users from "./pages/admin/Users";
 import Organizations from "./pages/admin/Organizations";
 import PanicApp from "./pages/client/PanicApp";
 
+const BASENAME = process.env.REACT_APP_BASE_PATH || "";
+
 function ProtectedRoute({ children, roles }) {
   const { user, checking } = useAuth();
   if (checking || user === null) {
@@ -48,7 +50,7 @@ function App() {
   return (
     <AuthProvider>
       <SocketProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={BASENAME}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route

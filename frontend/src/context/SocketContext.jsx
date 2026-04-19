@@ -4,6 +4,7 @@ import { useAuth } from "./AuthContext";
 
 const SocketContext = createContext(null);
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BASE_PATH = process.env.REACT_APP_BASE_PATH || "";
 
 export function SocketProvider({ children }) {
   const { user } = useAuth();
@@ -15,7 +16,7 @@ export function SocketProvider({ children }) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const socket = io(BACKEND_URL, {
-      path: "/api/socket.io",
+      path: `${BASE_PATH}/api/socket.io`,
       transports: ["websocket", "polling"],
       auth: { token },
       withCredentials: true,

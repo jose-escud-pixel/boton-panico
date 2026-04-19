@@ -1,0 +1,18 @@
+[Unit]
+Description=Boton de Panico - NACURUTU SEGURIDAD Backend (FastAPI + Socket.IO)
+After=network.target mongod.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/boton-panico/backend
+EnvironmentFile=/var/www/boton-panico/backend/.env
+ExecStart=/var/www/boton-panico/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8005 --workers 2
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/var/log/boton-panico/backend.log
+StandardError=append:/var/log/boton-panico/backend.err.log
+
+[Install]
+WantedBy=multi-user.target
