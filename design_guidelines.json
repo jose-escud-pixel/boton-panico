@@ -1,0 +1,134 @@
+{
+  "project_name": "ÑACURUTU SEGURIDAD",
+  "theme": "DARK",
+  "archetype": "Archetype 2 (The Performance Pro) / Tactical Security",
+  "colors": {
+    "background": {
+      "base": "#09090b",
+      "surface": "#18181b",
+      "elevated": "#27272a"
+    },
+    "text": {
+      "primary": "#ffffff",
+      "secondary": "#a1a1aa",
+      "muted": "#71717a"
+    },
+    "borders": {
+      "default": "rgba(255, 255, 255, 0.1)",
+      "active": "rgba(255, 255, 255, 0.2)"
+    },
+    "accents": {
+      "primary": "#ffffff",
+      "alert_critical": "#e11d48",
+      "alert_process": "#f59e0b",
+      "alert_completed": "#10b981"
+    }
+  },
+  "typography": {
+    "heading_font": "Cabinet Grotesk",
+    "body_font": "IBM Plex Sans",
+    "display_font": "Anton",
+    "rules": [
+      "No Inter or Roboto allowed anywhere.",
+      "Headings must use tight tracking (tracking-tight) to feel tactical and precise.",
+      "Overlines and table headers must be uppercase, tiny (text-xs), and wide spacing (tracking-[0.2em]).",
+      "Panic button text must be text-4xl to text-6xl, uppercase, Anton font."
+    ]
+  },
+  "spacing_and_layout": {
+    "admin_dashboard": {
+      "grid_mode": "Control Room Grid",
+      "classes": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4",
+      "panels": "h-full border border-zinc-800 bg-zinc-900 rounded-lg p-4 md:p-6",
+      "rules": "Every pixel utilized. Pure black/dark slate cards with 1px borders. No soft/fuzzy shadows. Replace soft shadows with 1px solid strokes or 2px 'Inner Glow' highlights (shadow-[inset_0_1px_0_rgba(255,255,255,0.1)])."
+    },
+    "client_pwa": {
+      "grid_mode": "Bento Grid / Mobile First",
+      "classes": "flex flex-col h-screen max-h-[100dvh] overflow-hidden bg-zinc-950 p-4",
+      "panic_button_container": "flex-1 flex items-center justify-center relative",
+      "rules": "Mobile-first approach. Content must be perfectly centered visually. Generous spacing around the red panic button to avoid accidental taps."
+    }
+  },
+  "components": {
+    "panic_button": {
+      "classes": "relative z-10 w-64 h-64 rounded-full bg-rose-600 text-white font-display text-5xl uppercase tracking-widest shadow-[0_0_64px_rgba(225,29,72,0.4)] active:scale-95 transition-transform duration-100 flex items-center justify-center border-4 border-rose-500",
+      "ripple_effect": "Add concentric animated ring layers behind the button using absolute positioning and ping/pulse animations to simulate signal broadcast."
+    },
+    "cards": {
+      "classes": "bg-zinc-900 border border-zinc-800 rounded-md shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
+      "hover": "hover:border-zinc-700 transition-colors"
+    },
+    "tables": {
+      "header_classes": "text-xs font-bold uppercase tracking-[0.2em] text-zinc-400 border-b border-zinc-800 pb-2",
+      "row_classes": "border-b border-zinc-800/50 hover:bg-zinc-800/50 transition-colors"
+    },
+    "alert_feed": {
+      "container_classes": "h-[400px] overflow-y-auto space-y-2 pr-2 custom-scrollbar",
+      "item_classes": "p-3 border-l-4 border-rose-600 bg-zinc-900 rounded-r-md flex flex-col gap-1",
+      "highlight_animation": "animate-pulse bg-rose-950/50"
+    },
+    "map": {
+      "tile_layer": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      "attribution": "&copy; <a href='https://carto.com/'>CARTO</a>",
+      "marker_color": "#e11d48"
+    }
+  },
+  "motion": {
+    "micro_interactions": {
+      "buttons": "active:scale-95 transition-all duration-150",
+      "hover_states": "hover:bg-zinc-800 hover:text-white"
+    },
+    "feed_entrance": "Staggered fade-in from the right (translate-x-4 to translate-x-0) for new alerts.",
+    "panic_trigger": "When panic button is pressed, screen flash effect (bg-white/10 inset-0 absolute) and a 0.5s screen shake animation."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "category": "login_background",
+        "url": "https://images.unsplash.com/photo-1761078739436-ccee01f3d89c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzN8MHwxfHNlYXJjaHwxfHxkYXJrJTIwYWJzdHJhY3QlMjB0ZXh0dXJlJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3NzY2MjAxOTJ8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark, moody abstract background with subtle light streaks. Use for Admin and Client login screens with a bg-zinc-950/80 overlay."
+      },
+      {
+        "category": "owl_mascot_reference",
+        "url": "https://images.pexels.com/photos/66885/owl-yellow-eyes-white-bird-66885.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "White snowy owl with yellow eyes. Use this as a placeholder avatar for the Super Admin, or as a subtle watermark graphic in the empty state of the dashboard."
+      },
+      {
+        "category": "dashboard_map_fallback",
+        "url": "https://images.unsplash.com/photo-1672590425196-43cdfe825d1b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAxODF8MHwxfHNlYXJjaHwyfHxkYXJrJTIwbmlnaHQlMjBjaXR5JTIwYWVyaWFsJTIwdmlld3xlbnwwfHx8fDE3NzY2MjAxODF8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark night city aerial view. Use as a background pattern or placeholder if Leaflet map fails to load."
+      },
+      {
+        "category": "emergency_icon_fallback",
+        "url": "https://images.unsplash.com/photo-1562151612-4919f18648df?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwxfHxyZWQlMjBlbWVyZ2VuY3klMjBidXR0b258ZW58MHx8fHwxNzc2NjIwMTkyfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Red alarm. Use for 404 pages or empty 'No Alerts' states."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "rules": "Use strokeWidth={1.5} for a crisper, more technical look. Icons must match text color exactly."
+    }
+  },
+  "instructions_to_main_agent": {
+    "general": [
+      "Strictly implement the dark theme. No light mode toggle needed. The entire system is built for low-light command centers and high-contrast mobile visibility.",
+      "Use Shadcn UI extensively for the Admin Dashboard (Tables, Dialogs, Select, Tabs, Forms). Override the default Shadcn radius to `rounded-sm` or `rounded-none` to fit the tactical aesthetic.",
+      "Forms (Client & Admin) MUST use Shadcn Form, Input, and Textarea components, stylized with border-zinc-800 and bg-zinc-900/50.",
+      "Client PWA requires a fixed bottom navigation or fixed header. The main interaction (Panic Button) must not be obscured by scrolling.",
+      "Embed Google Fonts manually in index.css: Cabinet Grotesk (headings), IBM Plex Sans (body), Anton (display)."
+    ],
+    "client_pwa": [
+      "The 'Silent Alert' must be a single-tap action (no confirmation dialogue) to ensure immediate dispatch. Give a subtle toast notification 'Alert sent silently'.",
+      "The 'Normal Alert' must open a full-screen drawer/modal (Shadcn Dialog or Drawer) containing a form for Text, Image Upload, and Audio recording.",
+      "Ensure the PWA is visually centered vertically and horizontally."
+    ],
+    "admin_panel": [
+      "Alert Feed must be sticky on the right sidebar or prominently placed. Incoming alerts should trigger an HTML5 Audio beep (use a base64 string or public URL for the beep).",
+      "Map Integration: Use `react-leaflet` with `TileLayer` pointing to the CartoDB Dark Matter URL specified in the components section.",
+      "Implement Chart.js or Recharts for 'Alerts Today/Week/Month'. Charts must use the specific hex colors from the palette (rose-600, amber-500, emerald-500)."
+    ],
+    "testing": [
+      "All interactive elements MUST include `data-testid` attributes (e.g., `data-testid=\"panic-button\"`, `data-testid=\"alert-row\"`)."
+    ]
+  }
+}
