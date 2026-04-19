@@ -6,7 +6,9 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { OwlLogo } from "../components/OwlLogo";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert, Download, Smartphone } from "lucide-react";
+
+const APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -126,6 +128,32 @@ export default function Login() {
             </Button>
           </form>
         </div>
+
+        {/* Android App Download */}
+        <a
+          href={APK_URL}
+          download
+          className="mt-5 flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-rose-300 hover:shadow-md transition-all duration-150 group"
+          data-testid="download-android-app-button"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+              <Smartphone className="w-5 h-5 text-emerald-600" strokeWidth={1.8} />
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-slate-900 leading-tight">
+                Descargar App Android
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Instala el botón de pánico en tu móvil
+              </div>
+            </div>
+          </div>
+          <Download
+            className="w-5 h-5 text-slate-400 group-hover:text-rose-600 transition-colors flex-shrink-0"
+            strokeWidth={1.8}
+          />
+        </a>
 
         <p className="text-center text-slate-400 text-xs mt-6 font-mono-tactical">
           ÑACURUTU SEGURIDAD © 2026 · Vigilancia 24/7

@@ -63,7 +63,15 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ Fix: mapa en dialog de detalle con altura fija 200px (no se desborda)
 - ✅ PWA manifest para instalación en celular
 
+## Update 2026-04-19 (iteración 3 — Native Android + Download)
+- ✅ Integración Capacitor para envolver frontend como APK nativo Android
+- ✅ Firebase Cloud Messaging (FCM) vía firebase-admin para push nativo
+- ✅ Script `deploy/build-android-apk.sh` para compilar APK en servidor del usuario
+- ✅ Configuración Apache VirtualHost + systemd para subpath `/boton-panico`
+- ✅ Botón "Descargar App Android" en Login (apunta a `/boton-panico/downloads/nacurutu-latest.apk`)
+
 ## Pendiente (próxima iteración)
-- Web Push real (SW + VAPID + pywebpush) para notificaciones con la pestaña cerrada
-- Múltiples logos por organización (comisión/junta/vecinos)
-- Notificación nativa con sonido customizado en background
+- P1: SMS fallback vía Twilio si el push falla
+- P2: Múltiples logos por organización (comisión/junta/vecinos)
+- P2: Responsive mejorado del Admin Dashboard en móvil
+- P2: Instrucciones compilación iOS (requiere cuenta Apple Developer del usuario)
