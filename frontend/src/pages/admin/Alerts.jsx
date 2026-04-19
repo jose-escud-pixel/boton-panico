@@ -188,6 +188,7 @@ export default function Alerts() {
       <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden mb-6" data-testid="alerts-map">
         <div className="h-72 w-full">
           <MapContainer
+            key={`main-map-${defaultCenter[0]}-${defaultCenter[1]}`}
             center={defaultCenter}
             zoom={mapMarkers.length ? 12 : 5}
             style={{ height: "100%", width: "100%" }}
@@ -328,6 +329,7 @@ export default function Alerts() {
                     </p>
                     <div className="h-48 rounded-sm overflow-hidden border border-zinc-800">
                       <MapContainer
+                        key={`detail-map-${selected.id}`}
                         center={[selected.location.coordinates[1], selected.location.coordinates[0]]}
                         zoom={15}
                         style={{ height: "100%", width: "100%" }}

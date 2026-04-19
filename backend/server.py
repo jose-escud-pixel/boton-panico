@@ -527,8 +527,8 @@ app.add_middleware(
 )
 
 
-# Wrap FastAPI with Socket.IO ASGI app
-asgi_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="socket.io")
+# Wrap FastAPI with Socket.IO ASGI app (mounted at /api/socket.io so it passes through k8s ingress)
+asgi_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/api/socket.io")
 
 # Supervisor points to `server:app` — so we need `app` to be the ASGI app with socket support.
 # Reassign `app` to the ASGI wrapper so supervisor picks it up.

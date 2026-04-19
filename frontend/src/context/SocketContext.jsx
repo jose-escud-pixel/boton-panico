@@ -15,7 +15,7 @@ export function SocketProvider({ children }) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const socket = io(BACKEND_URL, {
-      path: "/socket.io",
+      path: "/api/socket.io",
       transports: ["websocket", "polling"],
       auth: { token },
       withCredentials: true,
