@@ -1,40 +1,30 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../../lib/api";
 import { useSocket } from "../../context/SocketContext";
+import { speakAlertType } from "../../lib/alertVoice";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "../../components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "../../components/ui/select";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { formatDistanceToNow, format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Eye, MapPin, Image as ImageIcon, Volume2, Clock } from "lucide-react";
+import {
+  Eye, MapPin, Image as ImageIcon, Volume2, Clock,
+  Siren, Flame, HeartPulse, Navigation, AlertTriangle,
+} from "lucide-react";
 import { toast } from "sonner";
 
-// Fix leaflet default icon path
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -43,14 +33,24 @@ L.Icon.Default.mergeOptions({
 });
 
 const STATUS_STYLE = {
-  pending: "bg-rose-950 text-rose-400 border-rose-900",
-  in_process: "bg-amber-950 text-amber-400 border-amber-900",
-  completed: "bg-emerald-950 text-emerald-400 border-emerald-900",
+  pending: "bg-rose-50 text-rose-700 border-rose-200",
+  in_process: "bg-amber-50 text-amber-700 border-amber-200",
+  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 const STATUS_LABEL = {
   pending: "PENDIENTE",
   in_process: "EN PROCESO",
   completed: "COMPLETADA",
+};
+
+const TYPE_CFG = {
+  panic:   { label: "PÁNICO",     Icon: Siren,      bg: "bg-rose-50 text-rose-700 border-rose-200" },
+  fire:    { label: "INCENDIO",   Icon: Flame,      bg: "bg-orange-50 text-orange-700 border-orange-200" },
+  medical: { label: "ASISTENCIA", Icon: HeartPulse, bg: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  on_way:  { label: "EN CAMINO",  Icon: Navigation, bg: "bg-sky-50 text-sky-700 border-sky-200" },
+  here:    { label: "ESTOY AQUÍ", Icon: MapPin,     bg: "bg-violet-50 text-violet-700 border-violet-200" },
+  silent:  { label: "SILENCIOSA", Icon: Siren,      bg: "bg-rose-50 text-rose-700 border-rose-200" },
+  normal:  { label: "NORMAL",     Icon: AlertTriangle, bg: "bg-amber-50 text-amber-700 border-amber-200" },
 };
 
 function FlyTo({ center }) {
@@ -94,13 +94,14 @@ export default function Alerts() {
     }
   }, [filterStatus, filterType, filterUser]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     if (!socket) return;
-    const newHandler = () => load();
+    const newHandler = (alert) => {
+      speakAlertType(alert.type);
+      load();
+    };
     const updateHandler = () => load();
     socket.on("alert:new", newHandler);
     socket.on("alert:updated", updateHandler);
@@ -117,7 +118,7 @@ export default function Alerts() {
       setSelected(data);
       toast.success(`Estado actualizado a ${STATUS_LABEL[status]}`);
       load();
-    } catch (e) {
+    } catch {
       toast.error("No se pudo actualizar");
     }
   };
@@ -134,24 +135,25 @@ export default function Alerts() {
   const firstMarker = mapMarkers[0];
   const defaultCenter = firstMarker
     ? [firstMarker.location.coordinates[1], firstMarker.location.coordinates[0]]
-    : [-25.2637, -57.5759]; // Asunción default
+    : [-25.2637, -57.5759];
+
+  const lightTile = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto" data-testid="admin-alerts">
       <div className="mb-6">
         <p className="overline mb-2">Gestión</p>
-        <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight">Alertas</h1>
+        <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Alertas</h1>
       </div>
 
-      {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         <div>
           <Label className="overline block mb-1.5">Estado</Label>
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="bg-zinc-900 border-zinc-800 rounded-sm" data-testid="filter-status">
+            <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="filter-status">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-zinc-900 border-zinc-800">
+            <SelectContent className="bg-white border-slate-200">
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="pending">Pendientes</SelectItem>
               <SelectItem value="in_process">En proceso</SelectItem>
@@ -162,13 +164,18 @@ export default function Alerts() {
         <div>
           <Label className="overline block mb-1.5">Tipo</Label>
           <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="bg-zinc-900 border-zinc-800 rounded-sm" data-testid="filter-type">
+            <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="filter-type">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-zinc-900 border-zinc-800">
+            <SelectContent className="bg-white border-slate-200">
               <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="silent">Silenciosa</SelectItem>
-              <SelectItem value="normal">Normal</SelectItem>
+              <SelectItem value="panic">Pánico</SelectItem>
+              <SelectItem value="fire">Incendio</SelectItem>
+              <SelectItem value="medical">Asistencia</SelectItem>
+              <SelectItem value="on_way">En camino</SelectItem>
+              <SelectItem value="here">Estoy aquí</SelectItem>
+              <SelectItem value="silent">Silenciosa (legacy)</SelectItem>
+              <SelectItem value="normal">Normal (legacy)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -178,15 +185,15 @@ export default function Alerts() {
             value={filterUser}
             onChange={(e) => setFilterUser(e.target.value)}
             placeholder="nombre o email"
-            className="bg-zinc-900 border-zinc-800 rounded-sm"
+            className="bg-white border-slate-200 rounded-md"
             data-testid="filter-user"
           />
         </div>
       </div>
 
       {/* Map */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden mb-6" data-testid="alerts-map">
-        <div className="h-72 w-full">
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-6" data-testid="alerts-map">
+        <div style={{ height: "288px" }}>
           <MapContainer
             key={`main-map-${defaultCenter[0]}-${defaultCenter[1]}`}
             center={defaultCenter}
@@ -194,10 +201,7 @@ export default function Alerts() {
             style={{ height: "100%", width: "100%" }}
             scrollWheelZoom
           >
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution="&copy; OpenStreetMap &copy; CARTO"
-            />
+            <TileLayer url={lightTile} attribution="&copy; OpenStreetMap &copy; CARTO" />
             {center && <FlyTo center={center} />}
             {mapMarkers.map((a) => {
               const pos = [a.location.coordinates[1], a.location.coordinates[0]];
@@ -206,8 +210,8 @@ export default function Alerts() {
                   <Popup>
                     <div className="text-xs">
                       <div className="font-bold">{a.user_name}</div>
-                      <div className="text-zinc-400">{a.type === "silent" ? "Silenciosa" : "Normal"}</div>
-                      <div className="text-zinc-500 mt-1">
+                      <div className="text-slate-500">{TYPE_CFG[a.type]?.label || a.type}</div>
+                      <div className="text-slate-400 mt-1">
                         {format(new Date(a.timestamp), "PPp", { locale: es })}
                       </div>
                     </div>
@@ -220,206 +224,203 @@ export default function Alerts() {
       </div>
 
       {/* Table */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="overline text-zinc-400">Usuario</TableHead>
-                <TableHead className="overline text-zinc-400">Organización</TableHead>
-                <TableHead className="overline text-zinc-400">Tipo</TableHead>
-                <TableHead className="overline text-zinc-400">Estado</TableHead>
-                <TableHead className="overline text-zinc-400">Hora</TableHead>
-                <TableHead className="overline text-zinc-400">Acción</TableHead>
+              <TableRow className="border-slate-200 hover:bg-transparent">
+                <TableHead className="overline text-slate-500">Usuario</TableHead>
+                <TableHead className="overline text-slate-500">Organización</TableHead>
+                <TableHead className="overline text-slate-500">Tipo</TableHead>
+                <TableHead className="overline text-slate-500">Estado</TableHead>
+                <TableHead className="overline text-slate-500">Hora</TableHead>
+                <TableHead className="overline text-slate-500">Acción</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && (
-                <TableRow><TableCell colSpan={6} className="text-zinc-500 py-6">Cargando...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-slate-400 py-6">Cargando...</TableCell></TableRow>
               )}
               {!loading && alerts.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-zinc-500 py-8 text-center">Sin alertas</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-slate-400 py-8 text-center">Sin alertas</TableCell></TableRow>
               )}
-              {alerts.map((a) => (
-                <TableRow
-                  key={a.id}
-                  className="border-zinc-800 hover:bg-zinc-800/40 cursor-pointer"
-                  onClick={() => setSelected(a)}
-                  data-testid="alert-row"
-                >
-                  <TableCell>
-                    <div className="font-heading font-semibold">{a.user_name}</div>
-                    <div className="text-xs text-zinc-500">{a.user_email}</div>
-                  </TableCell>
-                  <TableCell className="text-zinc-300 text-sm">{a.organization_name}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={`rounded-sm ${
-                        a.type === "silent"
-                          ? "border-rose-900 text-rose-400"
-                          : "border-amber-900 text-amber-400"
-                      }`}
-                    >
-                      {a.type === "silent" ? "SILENCIOSA" : "NORMAL"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={`rounded-sm ${STATUS_STYLE[a.status]}`}>
-                      {STATUS_LABEL[a.status]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-zinc-400 text-xs font-mono-tactical">
-                    {formatDistanceToNow(new Date(a.timestamp), { addSuffix: true, locale: es })}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-zinc-400 hover:text-white"
-                      onClick={(e) => { e.stopPropagation(); setSelected(a); }}
-                      data-testid="view-alert-button"
-                    >
-                      <Eye className="w-4 h-4" strokeWidth={1.5} />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {alerts.map((a) => {
+                const cfg = TYPE_CFG[a.type] || { label: a.type?.toUpperCase() || "?", bg: "" };
+                return (
+                  <TableRow
+                    key={a.id}
+                    className="border-slate-100 hover:bg-slate-50 cursor-pointer"
+                    onClick={() => setSelected(a)}
+                    data-testid="alert-row"
+                  >
+                    <TableCell>
+                      <div className="font-heading font-semibold text-slate-900">{a.user_name}</div>
+                      <div className="text-xs text-slate-500">{a.user_email}</div>
+                    </TableCell>
+                    <TableCell className="text-slate-700 text-sm">{a.organization_name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`rounded ${cfg.bg}`}>
+                        {cfg.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={`rounded ${STATUS_STYLE[a.status]}`}>{STATUS_LABEL[a.status]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-slate-500 text-xs font-mono-tactical">
+                      {formatDistanceToNow(new Date(a.timestamp), { addSuffix: true, locale: es })}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-slate-500 hover:text-slate-900"
+                        onClick={(e) => { e.stopPropagation(); setSelected(a); }}
+                        data-testid="view-alert-button"
+                      >
+                        <Eye className="w-4 h-4" strokeWidth={1.8} />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
       </div>
 
-      {/* Detail Dialog */}
+      {/* Detail Dialog — fix: contenedor con altura FIJA en px para el mapa */}
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="bg-zinc-950 border-zinc-800 max-w-2xl rounded-md" data-testid="alert-detail-dialog">
-          {selected && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="font-heading tracking-tight flex items-center gap-2">
-                  Alerta de {selected.user_name}
-                  <Badge
-                    variant="outline"
-                    className={`rounded-sm ${
-                      selected.type === "silent"
-                        ? "border-rose-900 text-rose-400"
-                        : "border-amber-900 text-amber-400"
-                    }`}
-                  >
-                    {selected.type === "silent" ? "SILENCIOSA" : "NORMAL"}
-                  </Badge>
-                </DialogTitle>
-                <DialogDescription className="text-zinc-500 font-mono-tactical text-xs">
-                  {format(new Date(selected.timestamp), "PPPp", { locale: es })}
-                </DialogDescription>
-              </DialogHeader>
+        <DialogContent
+          className="bg-white border-slate-200 max-w-2xl rounded-lg overflow-hidden"
+          data-testid="alert-detail-dialog"
+        >
+          {selected && (() => {
+            const cfg = TYPE_CFG[selected.type] || { label: selected.type, Icon: AlertTriangle, bg: "" };
+            const Icon = cfg.Icon;
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="font-heading tracking-tight flex items-center gap-2 text-slate-900">
+                    <Icon className="w-5 h-5 text-rose-600" strokeWidth={1.8} />
+                    Alerta de {selected.user_name}
+                    <Badge variant="outline" className={`rounded ${cfg.bg}`}>
+                      {cfg.label}
+                    </Badge>
+                  </DialogTitle>
+                  <DialogDescription className="text-slate-500 font-mono-tactical text-xs">
+                    {format(new Date(selected.timestamp), "PPPp", { locale: es })}
+                  </DialogDescription>
+                </DialogHeader>
 
-              <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
-                {selected.message && (
-                  <div>
-                    <p className="overline mb-1">Mensaje</p>
-                    <p className="text-zinc-200">{selected.message}</p>
-                  </div>
-                )}
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                  {selected.message && (
+                    <div>
+                      <p className="overline mb-1">Mensaje</p>
+                      <p className="text-slate-800 bg-slate-50 border border-slate-200 rounded p-3">
+                        {selected.message}
+                      </p>
+                    </div>
+                  )}
 
-                {selected.location?.coordinates && (
+                  {selected.location?.coordinates && (
+                    <div>
+                      <p className="overline mb-2 flex items-center gap-1">
+                        <MapPin className="w-3 h-3" strokeWidth={1.8} /> Ubicación
+                      </p>
+                      <div
+                        className="rounded-md overflow-hidden border border-slate-200 relative"
+                        style={{ height: "200px" }}
+                      >
+                        <MapContainer
+                          key={`detail-map-${selected.id}`}
+                          center={[selected.location.coordinates[1], selected.location.coordinates[0]]}
+                          zoom={15}
+                          style={{ height: "100%", width: "100%" }}
+                        >
+                          <TileLayer url={lightTile} attribution="&copy; CARTO" />
+                          <Marker position={[selected.location.coordinates[1], selected.location.coordinates[0]]} />
+                        </MapContainer>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 font-mono-tactical">
+                        {selected.location.coordinates[1].toFixed(5)}, {selected.location.coordinates[0].toFixed(5)}
+                      </p>
+                    </div>
+                  )}
+
+                  {selected.image_url && (
+                    <div>
+                      <p className="overline mb-1 flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" strokeWidth={1.8} /> Imagen
+                      </p>
+                      <img
+                        src={selected.image_url}
+                        alt="Evidencia"
+                        className="max-h-56 rounded-md border border-slate-200"
+                      />
+                    </div>
+                  )}
+
+                  {selected.audio_url && (
+                    <div>
+                      <p className="overline mb-1 flex items-center gap-1">
+                        <Volume2 className="w-3 h-3" strokeWidth={1.8} /> Audio
+                      </p>
+                      <audio controls src={selected.audio_url} className="w-full" />
+                    </div>
+                  )}
+
                   <div>
                     <p className="overline mb-2 flex items-center gap-1">
-                      <MapPin className="w-3 h-3" strokeWidth={1.5} /> Ubicación
+                      <Clock className="w-3 h-3" strokeWidth={1.8} /> Historial
                     </p>
-                    <div className="h-48 rounded-sm overflow-hidden border border-zinc-800">
-                      <MapContainer
-                        key={`detail-map-${selected.id}`}
-                        center={[selected.location.coordinates[1], selected.location.coordinates[0]]}
-                        zoom={15}
-                        style={{ height: "100%", width: "100%" }}
-                      >
-                        <TileLayer
-                          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                          attribution="&copy; CARTO"
-                        />
-                        <Marker position={[selected.location.coordinates[1], selected.location.coordinates[0]]} />
-                      </MapContainer>
-                    </div>
-                    <p className="text-xs text-zinc-500 mt-1 font-mono-tactical">
-                      {selected.location.coordinates[1].toFixed(5)}, {selected.location.coordinates[0].toFixed(5)}
-                    </p>
+                    <ul className="space-y-2">
+                      {(selected.history || []).map((h, i) => (
+                        <li key={i} className="text-xs border-l-2 border-slate-200 pl-3">
+                          <div className="flex items-center gap-2">
+                            <Badge className={`rounded text-[0.6rem] ${STATUS_STYLE[h.status]}`}>
+                              {STATUS_LABEL[h.status]}
+                            </Badge>
+                            <span className="text-slate-700">{h.changed_by_name || "—"}</span>
+                          </div>
+                          <div className="text-slate-400 font-mono-tactical mt-0.5">
+                            {format(new Date(h.changed_at), "PPp", { locale: es })}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                )}
-
-                {selected.image_url && (
-                  <div>
-                    <p className="overline mb-1 flex items-center gap-1">
-                      <ImageIcon className="w-3 h-3" strokeWidth={1.5} /> Imagen
-                    </p>
-                    <img
-                      src={selected.image_url}
-                      alt="Evidencia"
-                      className="max-h-56 rounded-sm border border-zinc-800"
-                    />
-                  </div>
-                )}
-
-                {selected.audio_url && (
-                  <div>
-                    <p className="overline mb-1 flex items-center gap-1">
-                      <Volume2 className="w-3 h-3" strokeWidth={1.5} /> Audio
-                    </p>
-                    <audio controls src={selected.audio_url} className="w-full" />
-                  </div>
-                )}
-
-                <div>
-                  <p className="overline mb-2 flex items-center gap-1">
-                    <Clock className="w-3 h-3" strokeWidth={1.5} /> Historial
-                  </p>
-                  <ul className="space-y-2">
-                    {(selected.history || []).map((h, i) => (
-                      <li key={i} className="text-xs border-l-2 border-zinc-800 pl-3">
-                        <div className="flex items-center gap-2">
-                          <Badge className={`rounded-sm text-[0.6rem] ${STATUS_STYLE[h.status]}`}>
-                            {STATUS_LABEL[h.status]}
-                          </Badge>
-                          <span className="text-zinc-400">{h.changed_by_name || "—"}</span>
-                        </div>
-                        <div className="text-zinc-600 font-mono-tactical mt-0.5">
-                          {format(new Date(h.changed_at), "PPp", { locale: es })}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
-              </div>
 
-              <div className="pt-3 border-t border-zinc-800 flex flex-wrap gap-2">
-                <p className="overline w-full">Cambiar estado</p>
-                <Button
-                  size="sm"
-                  onClick={() => changeStatus("pending")}
-                  className="bg-rose-950 text-rose-400 border border-rose-900 hover:bg-rose-900 rounded-sm"
-                  data-testid="status-pending-button"
-                >
-                  Pendiente
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => changeStatus("in_process")}
-                  className="bg-amber-950 text-amber-400 border border-amber-900 hover:bg-amber-900 rounded-sm"
-                  data-testid="status-in-process-button"
-                >
-                  En proceso
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => changeStatus("completed")}
-                  className="bg-emerald-950 text-emerald-400 border border-emerald-900 hover:bg-emerald-900 rounded-sm"
-                  data-testid="status-completed-button"
-                >
-                  Completada
-                </Button>
-              </div>
-            </>
-          )}
+                <div className="pt-3 border-t border-slate-200 flex flex-wrap gap-2">
+                  <p className="overline w-full">Cambiar estado</p>
+                  <Button
+                    size="sm"
+                    onClick={() => changeStatus("pending")}
+                    className="bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded"
+                    data-testid="status-pending-button"
+                  >
+                    Pendiente
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => changeStatus("in_process")}
+                    className="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded"
+                    data-testid="status-in-process-button"
+                  >
+                    En proceso
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => changeStatus("completed")}
+                    className="bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded"
+                    data-testid="status-completed-button"
+                  >
+                    Completada
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

@@ -18,14 +18,13 @@ function ProtectedRoute({ children, roles }) {
   const { user, checking } = useAuth();
   if (checking || user === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <div className="text-zinc-500 text-sm font-mono-tactical">Cargando...</div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-slate-500 text-sm font-mono-tactical">Cargando...</div>
       </div>
     );
   }
   if (user === false) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) {
-    // If client tries to access admin, redirect to /client and vice versa
     if (user.role === "client") return <Navigate to="/client" replace />;
     return <Navigate to="/admin/dashboard" replace />;
   }
@@ -36,8 +35,8 @@ function RootRedirect() {
   const { user, checking } = useAuth();
   if (checking || user === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <div className="text-zinc-500 text-sm font-mono-tactical">Cargando...</div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-slate-500 text-sm font-mono-tactical">Cargando...</div>
       </div>
     );
   }
@@ -79,11 +78,11 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster
-            theme="dark"
+            theme="light"
             position="top-right"
             toastOptions={{
               classNames: {
-                toast: "bg-zinc-900 border border-zinc-800 rounded-sm",
+                toast: "bg-white border border-slate-200 rounded-md shadow-md",
               },
             }}
           />

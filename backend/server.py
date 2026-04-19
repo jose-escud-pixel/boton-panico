@@ -473,6 +473,13 @@ async def dashboard_stats(user: dict = Depends(require_admin)):
     today_count = await db.alerts.count_documents({**base_q, "timestamp": {"$gte": today_start}})
     week_count = await db.alerts.count_documents({**base_q, "timestamp": {"$gte": week_start_date}})
     month_count = await db.alerts.count_documents({**base_q, "timestamp": {"$gte": month_start_date}})
+    # by type (para dashboard con nuevas categorías + legacy)
+    type_counts = {}
+    for t in ["panic", "fire", "medical", "on_way", "here", "silent", "normal"]:
+        c = await db.alerts.count_documents({**base_q, "type": t})
+        if c > 0:
+            type_counts[t] = c
+
     silent = await db.alerts.count_documents({**base_q, "type": "silent"})
     normal = await db.alerts.count_documents({**base_q, "type": "normal"})
     pending = await db.alerts.count_documents({**base_q, "status": "pending"})
@@ -509,6 +516,7 @@ async def dashboard_stats(user: dict = Depends(require_admin)):
         "week": week_count,
         "month": month_count,
         "by_type": {"silent": silent, "normal": normal},
+        "type_counts": type_counts,
         "by_status": {"pending": pending, "in_process": in_process, "completed": completed},
         "by_organization": by_org,
         "daily": daily,

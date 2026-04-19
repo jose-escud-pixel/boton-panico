@@ -33,9 +33,9 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const ROLE_STYLE = {
-  super_admin: "bg-rose-950 text-rose-400 border-rose-900",
-  admin: "bg-amber-950 text-amber-400 border-amber-900",
-  client: "bg-zinc-800 text-zinc-300 border-zinc-700",
+  super_admin: "bg-rose-50 text-rose-700 border-rose-200",
+  admin: "bg-amber-50 text-amber-700 border-amber-200",
+  client: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 export default function Users() {
@@ -135,50 +135,50 @@ export default function Users() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="overline mb-2">Gestión</p>
-          <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight">Usuarios</h1>
+          <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Usuarios</h1>
         </div>
         <Button
           onClick={openCreate}
-          className="bg-rose-600 hover:bg-rose-500 text-white rounded-sm"
+          className="bg-rose-600 hover:bg-rose-500 text-white rounded-md"
           data-testid="new-user-button"
         >
           <Plus className="w-4 h-4 mr-1" strokeWidth={2} /> Nuevo
         </Button>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="overline text-zinc-400">Nombre</TableHead>
-                <TableHead className="overline text-zinc-400">Email</TableHead>
-                <TableHead className="overline text-zinc-400">Rol</TableHead>
-                <TableHead className="overline text-zinc-400">Organización</TableHead>
-                <TableHead className="overline text-zinc-400 text-right">Acciones</TableHead>
+              <TableRow className="border-slate-200 hover:bg-transparent">
+                <TableHead className="overline text-slate-500">Nombre</TableHead>
+                <TableHead className="overline text-slate-500">Email</TableHead>
+                <TableHead className="overline text-slate-500">Rol</TableHead>
+                <TableHead className="overline text-slate-500">Organización</TableHead>
+                <TableHead className="overline text-slate-500 text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {users.map((u) => (
-                <TableRow key={u.id} className="border-zinc-800 hover:bg-zinc-800/40" data-testid="user-row">
-                  <TableCell className="font-heading font-semibold">{u.name}</TableCell>
-                  <TableCell className="text-zinc-400 text-sm">{u.email}</TableCell>
+                <TableRow key={u.id} className="border-slate-100 hover:bg-slate-50" data-testid="user-row">
+                  <TableCell className="font-heading font-semibold text-slate-900">{u.name}</TableCell>
+                  <TableCell className="text-slate-600 text-sm">{u.email}</TableCell>
                   <TableCell>
-                    <Badge className={`rounded-sm ${ROLE_STYLE[u.role]}`}>{u.role}</Badge>
+                    <Badge className={`rounded ${ROLE_STYLE[u.role]}`}>{u.role}</Badge>
                   </TableCell>
-                  <TableCell className="text-zinc-300 text-sm">{orgMap[u.organization_id] || "—"}</TableCell>
+                  <TableCell className="text-slate-700 text-sm">{orgMap[u.organization_id] || "—"}</TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(u)} className="text-zinc-400 hover:text-white" data-testid="edit-user-button">
-                      <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(u)} className="text-slate-500 hover:text-slate-900" data-testid="edit-user-button">
+                      <Pencil className="w-4 h-4" strokeWidth={1.8} />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => remove(u)} className="text-zinc-400 hover:text-rose-400" data-testid="delete-user-button">
-                      <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                    <Button size="sm" variant="ghost" onClick={() => remove(u)} className="text-slate-500 hover:text-rose-600" data-testid="delete-user-button">
+                      <Trash2 className="w-4 h-4" strokeWidth={1.8} />
                     </Button>
                   </TableCell>
                 </TableRow>
               ))}
               {users.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-zinc-500 py-8 text-center">Sin usuarios</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-slate-400 py-8 text-center">Sin usuarios</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -186,12 +186,12 @@ export default function Users() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-zinc-950 border-zinc-800 rounded-md max-w-lg" data-testid="user-form-dialog">
+        <DialogContent className="bg-white border-slate-200 rounded-lg max-w-lg" data-testid="user-form-dialog">
           <DialogHeader>
-            <DialogTitle className="font-heading tracking-tight">
+            <DialogTitle className="font-heading tracking-tight text-slate-900">
               {editing ? "Editar usuario" : "Nuevo usuario"}
             </DialogTitle>
-            <DialogDescription className="text-zinc-500 text-xs">
+            <DialogDescription className="text-slate-500 text-xs">
               {editing ? "Actualizar información del usuario" : "Crear un nuevo usuario del sistema"}
             </DialogDescription>
           </DialogHeader>
@@ -202,7 +202,7 @@ export default function Users() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
-                className="bg-zinc-900 border-zinc-800 rounded-sm"
+                className="bg-white border-slate-200 rounded-md"
                 data-testid="user-name-input"
               />
             </div>
@@ -214,7 +214,7 @@ export default function Users() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
                 disabled={!!editing}
-                className="bg-zinc-900 border-zinc-800 rounded-sm"
+                className="bg-white border-slate-200 rounded-md"
                 data-testid="user-email-input"
               />
             </div>
@@ -227,7 +227,7 @@ export default function Users() {
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required={!editing}
-                className="bg-zinc-900 border-zinc-800 rounded-sm"
+                className="bg-white border-slate-200 rounded-md"
                 data-testid="user-password-input"
               />
             </div>
@@ -235,10 +235,10 @@ export default function Users() {
               <div>
                 <Label className="overline block mb-1.5">Rol</Label>
                 <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 rounded-sm" data-testid="user-role-select">
+                  <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-role-select">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                  <SelectContent className="bg-white border-slate-200">
                     <SelectItem value="client">Cliente</SelectItem>
                     {canCreateAdmin && <SelectItem value="admin">Admin</SelectItem>}
                     {canCreateAdmin && <SelectItem value="super_admin">Super Admin</SelectItem>}
@@ -252,10 +252,10 @@ export default function Users() {
                   onValueChange={(v) => setForm({ ...form, organization_id: v })}
                   disabled={me?.role !== "super_admin"}
                 >
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 rounded-sm" data-testid="user-org-select">
+                  <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-org-select">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                  <SelectContent className="bg-white border-slate-200">
                     {orgs.map((o) => (
                       <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
                     ))}
@@ -268,7 +268,7 @@ export default function Users() {
               <Label className="overline block mb-2">Permisos</Label>
               <div className="grid grid-cols-2 gap-2">
                 {["view", "create", "edit", "delete"].map((p) => (
-                  <label key={p} className="flex items-center gap-2 text-sm text-zinc-300">
+                  <label key={p} className="flex items-center gap-2 text-sm text-slate-700">
                     <Checkbox
                       checked={!!form.permissions[p]}
                       onCheckedChange={(c) =>
@@ -286,13 +286,13 @@ export default function Users() {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="rounded-sm">
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="rounded-md">
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 disabled={saving}
-                className="bg-rose-600 hover:bg-rose-500 rounded-sm"
+                className="bg-rose-600 hover:bg-rose-500 text-white rounded-md"
                 data-testid="user-save-button"
               >
                 {saving ? "Guardando..." : editing ? "Actualizar" : "Crear"}

@@ -76,7 +76,8 @@ class LoginRequest(BaseModel):
 
 
 # ---------- Alerts ----------
-AlertType = Literal["silent", "normal"]
+# panic, fire, medical, on_way, here = nuevos tipos; silent, normal = legacy (compatibilidad)
+AlertType = Literal["panic", "fire", "medical", "on_way", "here", "silent", "normal"]
 AlertStatus = Literal["pending", "in_process", "completed"]
 
 
@@ -90,7 +91,7 @@ class AlertCreate(BaseModel):
     message: Optional[str] = None
     image_url: Optional[str] = None  # base64 data URL
     audio_url: Optional[str] = None  # base64 data URL
-    location: Optional[GeoLocation] = None
+    location: GeoLocation  # REQUERIDA - toda alerta debe llevar ubicación
 
 
 class AlertStatusUpdate(BaseModel):
