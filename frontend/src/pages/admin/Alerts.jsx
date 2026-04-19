@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../../lib/api";
 import { useSocket } from "../../context/SocketContext";
-import { speakAlertType } from "../../lib/alertVoice";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import {
@@ -98,8 +97,8 @@ export default function Alerts() {
 
   useEffect(() => {
     if (!socket) return;
-    const newHandler = (alert) => {
-      speakAlertType(alert.type);
+    const newHandler = () => {
+      // El audio global lo maneja AlertAudioContext
       load();
     };
     const updateHandler = () => load();

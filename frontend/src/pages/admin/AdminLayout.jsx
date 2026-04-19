@@ -10,10 +10,11 @@ import {
   Building2,
   LogOut,
   Menu,
-  X,
   Radio,
+  VolumeX,
 } from "lucide-react";
 import { useSocket } from "../../context/SocketContext";
+import { useAlertAudio } from "../../context/AlertAudioContext";
 
 const navItems = [
   { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard", test: "nav-dashboard" },
@@ -25,6 +26,7 @@ const navItems = [
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const { connected } = useSocket();
+  const { silence } = useAlertAudio();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -88,6 +90,15 @@ export default function AdminLayout() {
             <div className="text-slate-900 truncate mt-1" data-testid="sidebar-user-name">{user?.name}</div>
             <div className="text-slate-500 text-[0.7rem] mt-0.5">{user?.role}</div>
           </div>
+          <Button
+            onClick={silence}
+            variant="outline"
+            className="w-full justify-start border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 rounded-md mb-1"
+            data-testid="silence-button"
+          >
+            <VolumeX className="w-4 h-4 mr-2" strokeWidth={1.8} />
+            Silenciar sirena
+          </Button>
           <Button
             onClick={handleLogout}
             variant="ghost"

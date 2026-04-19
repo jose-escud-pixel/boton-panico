@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../../lib/api";
 import { useSocket } from "../../context/SocketContext";
-import { speakAlertType } from "../../lib/alertVoice";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import {
@@ -63,7 +62,7 @@ export default function Dashboard() {
     const handler = (alert) => {
       setRecentAlerts((prev) => [alert, ...prev].slice(0, 10));
       loadData();
-      speakAlertType(alert.type);
+      // El audio (sirena + voz) lo maneja AlertAudioContext globalmente
       const cfg = TYPE_CFG[alert.type] || { label: alert.type?.toUpperCase() };
       toast.error(`Nueva alerta: ${cfg.label} — ${alert.user_name}`, {
         description: alert.organization_name,

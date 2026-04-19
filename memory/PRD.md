@@ -49,3 +49,21 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 ## Next Steps
 - User validation of flows
 - PWA installability if desired
+
+## Update 2026-04-19 (iteración 2)
+- ✅ Tema claro completo (admin + cliente)
+- ✅ Nuevos tipos de alerta: panic, fire, medical, on_way, here (+ legacy silent/normal)
+- ✅ Ubicación obligatoria en POST /api/alerts
+- ✅ Cliente: dialog unificado para todos los tipos con mensaje/foto/audio opcionales
+- ✅ Cliente: countdown de 5s sólo en Pánico con auto-envío, cancelable, pausable al interactuar
+- ✅ Admin: sirena sintética (Web Audio API) + voz TTS española al recibir alerta
+- ✅ Admin: sirena se detiene automáticamente cuando todas las alertas pendientes pasan a in_process/completed
+- ✅ Admin: botón "Silenciar sirena" en sidebar
+- ✅ Admin: notificaciones nativas del navegador (Notification API) — requiere permiso del usuario
+- ✅ Fix: mapa en dialog de detalle con altura fija 200px (no se desborda)
+- ✅ PWA manifest para instalación en celular
+
+## Pendiente (próxima iteración)
+- Web Push real (SW + VAPID + pywebpush) para notificaciones con la pestaña cerrada
+- Múltiples logos por organización (comisión/junta/vecinos)
+- Notificación nativa con sonido customizado en background
