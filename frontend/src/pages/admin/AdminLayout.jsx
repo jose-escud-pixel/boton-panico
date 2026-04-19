@@ -12,6 +12,10 @@ import {
   Menu,
   Radio,
   VolumeX,
+  Bell,
+  BellOff,
+  BellRing,
+  Loader2,
 } from "lucide-react";
 import { useSocket } from "../../context/SocketContext";
 import { useAlertAudio } from "../../context/AlertAudioContext";
@@ -26,7 +30,7 @@ const navItems = [
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const { connected } = useSocket();
-  const { silence } = useAlertAudio();
+  const { silence, pushStatus, pushLoading, enablePush } = useAlertAudio();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -99,6 +103,9 @@ export default function AdminLayout() {
             <VolumeX className="w-4 h-4 mr-2" strokeWidth={1.8} />
             Silenciar sirena
           </Button>
+
+          <PushButton status={pushStatus} loading={pushLoading} onEnable={enablePush} />
+
           <Button
             onClick={handleLogout}
             variant="ghost"
@@ -136,5 +143,43 @@ export default function AdminLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+function PushButton({ status, loading, onEnable }) {
+  if (status === "enabled") {
+    return (
+      <div
+        className="flex items-center gap-2 px-3 py-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md mb-1"
+        data-testid="push-enabled-indicator"
+      >
+        <BellRing className="w-3 h-3" strokeWidth={2} />
+        <span className="font-semibold">Push activo</span>
+      </div>
+    );
+  }
+  if (status === "denied") {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md mb-1"
+           data-testid="push-denied-indicator">
+        <BellOff className="w-3 h-3" strokeWidth={2} />
+        <span>Notif. bloqueadas</span>
+      </div>
+    );
+  }
+  if (status === "unsupported") {
+    return null;
+  }
+  return (
+    <Button
+      onClick={onEnable}
+      disabled={loading}
+      variant="outline"
+      className="w-full justify-start border-sky-200 text-sky-700 hover:bg-sky-50 hover:text-sky-800 rounded-md mb-1"
+      data-testid="enable-push-button"
+    >
+      {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Bell className="w-4 h-4 mr-2" strokeWidth={1.8} />}
+      Activar push
+    </Button>
   );
 }

@@ -34,6 +34,12 @@ from models import (
     AlertStatusUpdate,
     Permissions,
 )
+from push import (
+    ensure_vapid_keys,
+    get_vapid_public_key,
+    send_push_to_admins,
+    build_subscription_doc,
+)
 from seed import seed_initial_data
 
 # ---------- Logging ----------
@@ -105,6 +111,9 @@ async def startup():
     await db.organizations.create_index("name")
     await db.alerts.create_index("organization_id")
     await db.alerts.create_index("timestamp")
+    await db.push_subscriptions.create_index("endpoint", unique=True)
+    await db.push_subscriptions.create_index("user_id")
+    ensure_vapid_keys()
     await seed_initial_data(db)
     logger.info("Startup seeding complete")
 
@@ -370,9 +379,14 @@ async def create_alert(payload: AlertCreate, user: dict = Depends(get_current_us
     }
     await db.alerts.insert_one(dict(alert))
     alert.pop("_id", None)
-    # Emit to admins and org room
+    # Emit socket.io event to admins
     await sio.emit("alert:new", alert, room="admins")
     await sio.emit("alert:new", alert, room=f"org:{org_id}")
+    # Send web push to admins (works even with browser closed)
+    try:
+        await send_push_to_admins(db, alert)
+    except Exception as e:
+        logger.warning(f"send_push_to_admins failed: {e}")
     return alert
 
 
@@ -521,6 +535,38 @@ async def dashboard_stats(user: dict = Depends(require_admin)):
         "by_organization": by_org,
         "daily": daily,
     }
+
+
+# ======================================================
+# WEB PUSH (VAPID)
+# ======================================================
+@api.get("/push/vapid-public-key")
+async def push_vapid_public():
+    return {"publicKey": get_vapid_public_key()}
+
+
+@api.post("/push/subscribe")
+async def push_subscribe(payload: dict, user: dict = Depends(get_current_user)):
+    endpoint = payload.get("endpoint")
+    keys = payload.get("keys")
+    if not endpoint or not keys or "p256dh" not in keys or "auth" not in keys:
+        raise HTTPException(status_code=400, detail="Invalid subscription payload")
+    doc = build_subscription_doc(user, endpoint, keys)
+    await db.push_subscriptions.update_one(
+        {"endpoint": endpoint},
+        {"$set": doc},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.post("/push/unsubscribe")
+async def push_unsubscribe(payload: dict, user: dict = Depends(get_current_user)):
+    endpoint = payload.get("endpoint")
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="endpoint required")
+    await db.push_subscriptions.delete_one({"endpoint": endpoint, "user_id": user["id"]})
+    return {"ok": True}
 
 
 # ---------- CORS ----------

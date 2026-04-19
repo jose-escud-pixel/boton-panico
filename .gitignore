@@ -132,3 +132,8 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# VAPID keys (auto-generated at startup)
+.vapid/
+backend/.vapid/
+frontend/node_modules/.cache/default-development/7.pack
