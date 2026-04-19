@@ -71,7 +71,7 @@ sudo chmod 600 .env
 
 ```bash
 # Copiar la unidad
-sudo cp /var/www/boton-panico/deploy/boton-panico-backend.service \
+sudo cp /var/www/boton-panico/deploy/boton-panico.service \
         /etc/systemd/system/
 
 # Crear carpeta de logs
@@ -80,14 +80,24 @@ sudo chown www-data:www-data /var/log/boton-panico
 
 # Activar
 sudo systemctl daemon-reload
-sudo systemctl enable --now boton-panico-backend
+sudo systemctl enable --now boton-panico
 
 # Verificar
-sudo systemctl status boton-panico-backend
+sudo systemctl status boton-panico
 sudo tail -f /var/log/boton-panico/backend.err.log
 
 # Probar endpoint (debería responder con 401 — sin token — es correcto)
 curl http://127.0.0.1:8005/api/auth/me
+```
+
+### Manejo del servicio (SERVICE_NAME=`boton-panico`)
+
+```bash
+sudo systemctl start boton-panico
+sudo systemctl stop boton-panico
+sudo systemctl restart boton-panico
+sudo systemctl status boton-panico
+sudo journalctl -u boton-panico -f
 ```
 
 ---
@@ -189,7 +199,7 @@ sudo git pull
 # Backend
 cd backend
 sudo -u www-data ./venv/bin/pip install -r requirements.txt
-sudo systemctl restart boton-panico-backend
+sudo systemctl restart boton-panico
 
 # Frontend
 cd ../frontend
@@ -214,7 +224,7 @@ sudo -u www-data yarn build
 - Rebuild: `cd frontend && sudo -u www-data yarn build`
 
 **Backend no arranca**
-- `sudo journalctl -u boton-panico-backend -n 100`
+- `sudo journalctl -u boton-panico -n 100`
 - Verifica Mongo: `sudo systemctl status mongod`
 
 **Rutas admin (ej. /boton-panico/admin/alerts) dan 404 al refrescar**
