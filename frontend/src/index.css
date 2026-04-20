@@ -108,6 +108,15 @@ code {
     animation-delay: 1.2s;
 }
 
+/* Slow pulse for SOS glow halo */
+@keyframes pulse-slow {
+    0%, 100% { opacity: 0.35; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.03); }
+}
+.animate-pulse-slow {
+    animation: pulse-slow 2.4s ease-in-out infinite;
+}
+
 /* Screen shake on panic */
 @keyframes screen-shake {
     0%, 100% { transform: translateX(0); }

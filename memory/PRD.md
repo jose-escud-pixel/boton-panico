@@ -101,6 +101,21 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ Badge muestra plataforma + versión + build (ej: "📱 App · v1.0.0 · build 42")
 - ✅ Click en badge → chequea manualmente si hay nueva versión → muestra "Al día" / "Nueva disponible" / "No se pudo verificar"
 
+## Update 2026-04-20 (iteración 8 — Rediseño UI Cliente + Dark/Light Mode + Framer Motion)
+- ✅ **Rediseño completo de la app cliente** inspirado en mockup de usuario
+- ✅ Dark / Light mode con toggle en header, persistido en localStorage vía ThemeContext
+- ✅ Framer Motion instalado para animaciones entrada + hover + tap
+- ✅ Botón SOS rediseñado: gradiente rose-to-red, chip blanco con "SOS", glow pulsante
+- ✅ Grid 2x2 con gradientes por tipo (orange / emerald / sky / violet)
+- ✅ Tiles con glassmorphism, stagger entrance animation, hover lift
+- ✅ "UTILIDADES" (icono Wrench) reemplaza "EN CAMINO" en UI cliente (backend type `on_way`)
+- ✅ "Mis alertas" reemplaza "Mis alarmas"
+- ✅ "PÁNICO" en botón grande ahora es solo "SOS"
+- ✅ Bandera 🇵🇾 en header, botones redondos para theme/settings/history/logout
+- ✅ Dialog de envío adaptado a dark mode
+- ✅ Animación `pulse-slow` custom para el halo glow del SOS
+- ✅ Texto footer actualizado: "Todas las alertas envían tu ubicación automáticamente..."
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)

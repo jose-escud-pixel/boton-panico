@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { SocketProvider } from "./context/SocketContext";
 import { AlertAudioProvider } from "./context/AlertAudioContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { Toaster } from "./components/ui/sonner";
 
 import Login from "./pages/Login";
@@ -48,11 +49,12 @@ function RootRedirect() {
 
 function App() {
   return (
-    <AuthProvider>
-      <SocketProvider>
-        <AlertAudioProvider>
-          <BrowserRouter basename={BASENAME}>
-          <Routes>
+    <ThemeProvider>
+      <AuthProvider>
+        <SocketProvider>
+          <AlertAudioProvider>
+            <BrowserRouter basename={BASENAME}>
+            <Routes>
             <Route path="/login" element={<Login />} />
             <Route
               path="/client"
@@ -88,10 +90,11 @@ function App() {
               },
             }}
           />
-        </BrowserRouter>
-        </AlertAudioProvider>
-      </SocketProvider>
-    </AuthProvider>
+          </BrowserRouter>
+          </AlertAudioProvider>
+        </SocketProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 
