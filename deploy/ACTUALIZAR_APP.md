@@ -88,8 +88,9 @@ El campo `changelog` aparece en el banner debajo del nombre de la versión.
 ## 🛡️ Notas importantes
 
 - **Android pide permiso de "Instalar apps desconocidas"** la primera vez. El usuario tiene que aceptarlo → luego no vuelve a preguntar.
-- **El número de versión interno del APK** (lo que Android usa para saber si es realmente "más nueva") se maneja automáticamente por Gradle via `versionCode` / `versionName`. Si querés forzar una reinstalación más clara, incrementá `versionCode` en `android/app/build.gradle`.
-- **En modo debug**, Android puede mostrar un mensaje tipo "la app existente está firmada con una clave distinta". Esto NO pasa si siempre usás el mismo script de build (misma debug keystore).
+- **`versionCode` se auto-incrementa en cada build** — el script lee el contador desde `/var/www/boton-panico/.apk-version-code` y lo suma +1. Esto garantiza que Android SIEMPRE considere el APK nuevo como "más reciente" que el instalado, evitando errores tipo *"la aplicación ya está instalada con la misma versión"*.
+- **`versionName`** se sincroniza automáticamente desde `APP_VERSION` de `appVersion.js`. Si bumpeás a `1.0.2` ahí, el APK muestra 1.0.2 en la config de Android.
+- **Si querés resetear el contador** (por ejemplo después de una instalación limpia sin historial), editá `/var/www/boton-panico/.apk-version-code` y poné un número. El próximo build partirá de ese +1.
 - **Para release (Play Store o distribución firmada)**, se requiere una keystore persistente. Se puede agregar al script más adelante.
 
 ---

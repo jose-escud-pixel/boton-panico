@@ -117,6 +117,32 @@ if ! grep -q "google-services" "$BUILD_GRADLE_APP"; then
     echo "apply plugin: 'com.google.gms.google-services'" >> "$BUILD_GRADLE_APP"
 fi
 
+# ---------- Paso 7c: Auto-increment versionCode + versionName ----------
+# Lee APP_VERSION desde appVersion.js y lo usa como versionName.
+# versionCode se incrementa automáticamente y persiste en .apk-version-code.
+VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
+if [ ! -f "$VERSION_CODE_FILE" ]; then
+    echo "1" > "$VERSION_CODE_FILE"
+fi
+
+CURRENT_CODE=$(cat "$VERSION_CODE_FILE")
+NEW_CODE=$((CURRENT_CODE + 1))
+echo "$NEW_CODE" > "$VERSION_CODE_FILE"
+
+APP_VERSION_NAME=$(grep -E "APP_VERSION\s*=" "$FRONTEND_DIR/src/lib/appVersion.js" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+APP_VERSION_NAME="${APP_VERSION_NAME:-1.0.0}"
+
+log "Paso 7c — versionCode: $CURRENT_CODE → $NEW_CODE, versionName: $APP_VERSION_NAME"
+
+# Reemplazar versionCode y versionName en app/build.gradle
+sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $NEW_CODE/" "$BUILD_GRADLE_APP"
+sed -i -E "s/versionName[[:space:]]+\"[^\"]*\"/versionName \"$APP_VERSION_NAME\"/" "$BUILD_GRADLE_APP"
+
+# Verificación
+if ! grep -q "versionCode $NEW_CODE" "$BUILD_GRADLE_APP"; then
+    warn "No se pudo actualizar versionCode en $BUILD_GRADLE_APP — seguimos igual."
+fi
+
 # ---------- Paso 8: Build APK debug ----------
 log "Paso 8 — Compilando APK..."
 cd "$ANDROID_DIR"
@@ -148,6 +174,7 @@ APP_VERSION="${APP_VERSION:-1.0.0}"
 cat > "$DOWNLOADS_DIR/version.json" <<EOF
 {
   "version": "$APP_VERSION",
+  "versionCode": $NEW_CODE,
   "apk_url": "/boton-panico/downloads/nacurutu-latest.apk",
   "changelog": "Build $(date '+%Y-%m-%d %H:%M')",
   "build_timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -161,7 +188,7 @@ log "  ✅ APK GENERADA EXITOSAMENTE"
 log "============================================"
 log "  Archivo: $APK_OUT"
 log "  Tamaño: $SIZE"
-log "  Versión: $APP_VERSION"
+log "  Versión: $APP_VERSION (versionCode: $NEW_CODE)"
 log ""
 log "  📤 Publicado en Apache:"
 log "     $DOWNLOADS_DIR/nacurutu-latest.apk"
