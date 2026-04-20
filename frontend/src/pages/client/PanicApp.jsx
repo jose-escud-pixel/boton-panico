@@ -19,6 +19,8 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
+import { getNativeLocation, isNative } from "../../lib/nativePush";
+import UpdateBanner from "../../components/UpdateBanner";
 
 const ALERT_TYPES = {
   panic:   { label: "PÁNICO",     Icon: Siren,      accent: "rose",     voice: "Pánico" },
@@ -75,23 +77,39 @@ export default function PanicApp() {
   useEffect(() => {
     loadOrg();
     loadHistory();
+    // Solicitar permiso de ubicación proactivamente en nativo (Android)
+    // para que el sistema muestre el diálogo al abrir la app,
+    // NO cuando el usuario presiona pánico (que es tarde).
+    if (isNative()) {
+      (async () => {
+        try {
+          const { Geolocation } = await import("@capacitor/geolocation");
+          const perm = await Geolocation.checkPermissions();
+          if (perm.location !== "granted") {
+            await Geolocation.requestPermissions();
+          }
+        } catch (e) {
+          console.warn("No se pudo solicitar permiso de ubicación:", e);
+        }
+      })();
+    }
   }, [loadOrg, loadHistory]);
 
-  const getLocation = () =>
-    new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error("Tu navegador no soporta geolocalización"));
-        return;
+  const getLocation = async () => {
+    try {
+      const loc = await getNativeLocation();
+      return {
+        type: "Point",
+        coordinates: [loc.longitude, loc.latitude],
+      };
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("denegado")) {
+        throw new Error("Debes permitir el acceso a tu ubicación para enviar una alerta");
       }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({
-          type: "Point",
-          coordinates: [pos.coords.longitude, pos.coords.latitude],
-        }),
-        () => reject(new Error("Debes permitir el acceso a tu ubicación para enviar una alerta")),
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-      );
-    });
+      throw new Error(msg || "No se pudo obtener tu ubicación. Verificá que el GPS esté activo.");
+    }
+  };
 
   const openDialog = (type) => {
     setActiveType(type);
@@ -213,6 +231,7 @@ export default function PanicApp() {
       className={`min-h-screen client-bg text-slate-900 flex flex-col ${shake ? "shake" : ""}`}
       data-testid="client-panic-app"
     >
+      <UpdateBanner />
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 bg-white/60 backdrop-blur border-b border-slate-200">
         <div className="flex items-center gap-3 min-w-0">

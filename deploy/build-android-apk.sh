@@ -134,15 +134,44 @@ APK_OUT="$APK_OUT_DIR/nacurutu-seguridad-$(date +%Y%m%d-%H%M).apk"
 cp "$APK_BUILT" "$APK_OUT"
 SIZE=$(du -h "$APK_OUT" | cut -f1)
 
+# ---------- Paso 9: Publicar en Apache (/var/www/boton-panico/downloads) ----------
+DOWNLOADS_DIR="$PROJECT_ROOT/downloads"
+mkdir -p "$DOWNLOADS_DIR"
+cp "$APK_BUILT" "$DOWNLOADS_DIR/nacurutu-latest.apk"
+chmod 644 "$DOWNLOADS_DIR/nacurutu-latest.apk"
+
+# Leer APP_VERSION desde el código fuente del frontend
+APP_VERSION=$(grep -E "APP_VERSION\s*=" "$FRONTEND_DIR/src/lib/appVersion.js" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+APP_VERSION="${APP_VERSION:-1.0.0}"
+
+# Generar version.json para el banner de actualización
+cat > "$DOWNLOADS_DIR/version.json" <<EOF
+{
+  "version": "$APP_VERSION",
+  "apk_url": "/boton-panico/downloads/nacurutu-latest.apk",
+  "changelog": "Build $(date '+%Y-%m-%d %H:%M')",
+  "build_timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+}
+EOF
+chmod 644 "$DOWNLOADS_DIR/version.json"
+
 log ""
 log "============================================"
 log "  ✅ APK GENERADA EXITOSAMENTE"
 log "============================================"
 log "  Archivo: $APK_OUT"
 log "  Tamaño: $SIZE"
+log "  Versión: $APP_VERSION"
+log ""
+log "  📤 Publicado en Apache:"
+log "     $DOWNLOADS_DIR/nacurutu-latest.apk"
+log "     $DOWNLOADS_DIR/version.json"
+log ""
+log "  Descarga pública:"
+log "     https://www.aranduinformatica.net/boton-panico/downloads/nacurutu-latest.apk"
 log ""
 log "  Para instalar en tu celular:"
 log "  1) Activá 'Instalar apps de fuentes desconocidas' en Android"
-log "  2) Copiá la APK al teléfono (WhatsApp, USB, etc.) e instalala"
+log "  2) Entrá desde el celular a la URL de descarga pública"
 log "  3) Abrí 'ÑACURUTU Seguridad' → login → permitir notificaciones + ubicación"
 log "============================================"

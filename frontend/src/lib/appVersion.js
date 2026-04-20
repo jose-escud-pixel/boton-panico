@@ -1,0 +1,46 @@
+/**
+ * Versión actual de la app embebida en el bundle.
+ * BUMP esta variable antes de compilar cada nueva APK.
+ * El build-android-apk.sh también usa este valor para generar version.json.
+ *
+ * Formato semver (mayor.menor.patch) — la comparación es numérica pieza por pieza.
+ */
+export const APP_VERSION = "1.0.0";
+
+/**
+ * URL del archivo version.json que publica el servidor.
+ * Debe devolver: { "version": "1.0.1", "apk_url": "...", "changelog": "..." }
+ */
+export const VERSION_JSON_URL = "/boton-panico/downloads/version.json";
+
+/** URL pública del APK más reciente. */
+export const APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
+
+/** Compara dos versiones semver. Retorna 1 si a>b, -1 si a<b, 0 si iguales. */
+export function compareVersions(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+/** Fetch de version.json del servidor. Retorna null si falla. */
+export async function fetchRemoteVersion() {
+  try {
+    const res = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.version) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}

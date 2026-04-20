@@ -70,6 +70,19 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ Configuración Apache VirtualHost + systemd para subpath `/boton-panico`
 - ✅ Botón "Descargar App Android" en Login (apunta a `/boton-panico/downloads/nacurutu-latest.apk`)
 
+## Update 2026-04-20 (iteración 4 — Branding + Actualización + Geolocation Fix)
+- ✅ Branding limpio: título de pestaña "ÑACURUTU Seguridad" (reemplaza "Emergent | Fullstack App")
+- ✅ Eliminado badge "Made with Emergent" y tracking PostHog del build
+- ✅ Fix crítico de geolocalización en APK Android: uso del plugin `@capacitor/geolocation` (antes fallaba con `navigator.geolocation` en WebView con server remoto)
+- ✅ Solicitud proactiva de permiso de ubicación al abrir la app nativa (evita el error al presionar pánico)
+- ✅ Sistema de actualización OTA: banner rojo en app nativa con botón "ACTUALIZAR" cuando hay nueva versión
+- ✅ `lib/appVersion.js` con constante `APP_VERSION` + helper comparador semver
+- ✅ `version.json` generado automáticamente por `build-android-apk.sh`
+- ✅ Script de build publica APK automáticamente en `/var/www/boton-panico/downloads/`
+- ✅ Botón "Descargar App Android" oculto cuando la app se ejecuta en Capacitor (ya estás dentro)
+- ✅ Apache config: Alias `/boton-panico/downloads` con `ForceType application/vnd.android.package-archive` y `Content-Disposition: attachment` para forzar descarga como APK (fix: se bajaba como .html)
+- ✅ Documentación: `/app/deploy/ACTUALIZAR_APP.md`
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)
