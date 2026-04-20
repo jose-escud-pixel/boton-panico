@@ -143,6 +143,45 @@ if ! grep -q "versionCode $NEW_CODE" "$BUILD_GRADLE_APP"; then
     warn "No se pudo actualizar versionCode en $BUILD_GRADLE_APP — seguimos igual."
 fi
 
+# ---------- Paso 7d: Asegurar permisos en AndroidManifest.xml ----------
+# Capacitor NO agrega retroactivamente permisos si el proyecto Android ya existía.
+# Este paso garantiza que estén TODOS los permisos críticos de la app.
+MANIFEST="$ANDROID_DIR/app/src/main/AndroidManifest.xml"
+if [ ! -f "$MANIFEST" ]; then
+    err "No se encontró $MANIFEST"
+    exit 1
+fi
+
+PERMS_NEEDED=(
+    "android.permission.INTERNET"
+    "android.permission.ACCESS_NETWORK_STATE"
+    "android.permission.ACCESS_FINE_LOCATION"
+    "android.permission.ACCESS_COARSE_LOCATION"
+    "android.permission.POST_NOTIFICATIONS"
+    "android.permission.VIBRATE"
+    "android.permission.RECORD_AUDIO"
+    "android.permission.CAMERA"
+    "android.permission.READ_EXTERNAL_STORAGE"
+    "android.permission.WAKE_LOCK"
+    "android.permission.FOREGROUND_SERVICE"
+)
+
+log "Paso 7d — Verificando permisos en AndroidManifest.xml..."
+ADDED_COUNT=0
+for PERM in "${PERMS_NEEDED[@]}"; do
+    if ! grep -q "\"$PERM\"" "$MANIFEST"; then
+        # Insertar ANTES de </manifest>
+        sed -i "/<\/manifest>/i\    <uses-permission android:name=\"$PERM\" />" "$MANIFEST"
+        log "   + Agregado: $PERM"
+        ADDED_COUNT=$((ADDED_COUNT + 1))
+    fi
+done
+if [ "$ADDED_COUNT" -eq 0 ]; then
+    log "   Todos los permisos ya estaban presentes."
+else
+    log "   $ADDED_COUNT permiso(s) agregado(s) al manifest."
+fi
+
 # ---------- Paso 8: Build APK debug ----------
 log "Paso 8 — Compilando APK..."
 cd "$ANDROID_DIR"
