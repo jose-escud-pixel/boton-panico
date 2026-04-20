@@ -208,18 +208,12 @@ else
     log "   + Copiado PowerButtonPlugin.java"
     log "   + Copiado PowerButtonService.java"
 
-    # Registrar plugin en MainActivity.java
+    # Registrar plugin en MainActivity.java — sobrescribir con versión conocida
+    # (evita errores de sed si el archivo original era de una sola línea).
     MAIN_ACTIVITY="$JAVA_PKG_DIR/MainActivity.java"
-    if [ -f "$MAIN_ACTIVITY" ] && ! grep -q "PowerButtonPlugin.class" "$MAIN_ACTIVITY"; then
-        # Insertar registerPlugin ANTES del super.onCreate
-        if grep -q "super.onCreate" "$MAIN_ACTIVITY"; then
-            sed -i '/super\.onCreate/i\        registerPlugin(PowerButtonPlugin.class);' "$MAIN_ACTIVITY"
-            log "   + Plugin registrado en MainActivity.java"
-        else
-            # MainActivity minimal (no tiene onCreate override) — añadir método
-            sed -i '/public class MainActivity/a\    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        registerPlugin(PowerButtonPlugin.class);\n        super.onCreate(savedInstanceState);\n    }' "$MAIN_ACTIVITY"
-            log "   + onCreate agregado a MainActivity.java"
-        fi
+    if [ -f "$PLUGIN_SRC_DIR/MainActivity.java" ]; then
+        cp "$PLUGIN_SRC_DIR/MainActivity.java" "$MAIN_ACTIVITY"
+        log "   + MainActivity.java reemplazado (con registerPlugin)"
     fi
 
     # Registrar <service> en AndroidManifest.xml dentro de <application>
