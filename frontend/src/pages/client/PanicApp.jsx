@@ -203,7 +203,7 @@ export default function PanicApp() {
       const location = await getLocation();
       await api.post("/alerts", {
         type: "panic",
-        message: "Pánico automático (botón de encendido x5)",
+        message: "Pánico automático (botón de encendido x4)",
         image_url: null,
         audio_url: null,
         location,

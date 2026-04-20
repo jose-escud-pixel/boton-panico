@@ -30,8 +30,8 @@ public class PowerButtonService extends Service {
     public static final String ACTION_STOP = "ACTION_STOP";
     private static final String CHANNEL_ID = "nacurutu_power_watch";
     private static final int NOTIF_ID = 9871;
-    private static final int PRESSES_REQUIRED = 5;
-    private static final long WINDOW_MS = 5000L;
+    private static final int PRESSES_REQUIRED = 4;
+    private static final long WINDOW_MS = 4000L;
 
     private BroadcastReceiver screenReceiver;
     private final ArrayList<Long> presses = new ArrayList<>();
@@ -85,7 +85,7 @@ public class PowerButtonService extends Service {
 
         NotificationCompat.Builder b = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("ÑACURUTU Seguridad")
-                .setContentText("Botón de pánico rápido activo — 5 presiones al encendido")
+                .setContentText("Botón de pánico rápido activo — 4 presiones al encendido")
                 .setSmallIcon(getApplicationInfo().icon)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)

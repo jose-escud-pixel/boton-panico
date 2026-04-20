@@ -70,7 +70,7 @@ export default function ClientSettingsDialog({ open, onOpenChange }) {
                   Pánico por botón de encendido
                 </div>
                 <div className="text-xs text-slate-500 mt-1">
-                  Presiona 5 veces el botón de encendido del celular en 5 segundos para disparar
+                  Presiona 4 veces el botón de encendido del celular en 4 segundos para disparar
                   una alerta de pánico automáticamente, incluso con la pantalla bloqueada y el
                   celular en el bolsillo.
                 </div>
