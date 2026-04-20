@@ -21,6 +21,7 @@ import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { getNativeLocation, isNative } from "../../lib/nativePush";
 import UpdateBanner from "../../components/UpdateBanner";
+import VersionBadge from "../../components/VersionBadge";
 
 const ALERT_TYPES = {
   panic:   { label: "PÁNICO",     Icon: Siren,      accent: "rose",     voice: "Pánico" },
@@ -315,6 +316,9 @@ export default function PanicApp() {
 
       <footer className="px-4 py-3 border-t border-slate-200 bg-white/60 text-center">
         <p className="text-[0.65rem] text-slate-500 font-mono-tactical">ÑACURUTU · Vigilancia 24/7</p>
+        <div className="flex justify-center mt-1">
+          <VersionBadge compact />
+        </div>
       </footer>
 
       {/* ================================ */}

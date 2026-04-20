@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { OwlLogo } from "../components/OwlLogo";
 import { Loader2, ShieldAlert, Download, Smartphone } from "lucide-react";
 import { isNative } from "../lib/nativePush";
+import VersionBadge from "../components/VersionBadge";
 
 const APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
 
@@ -161,6 +162,9 @@ export default function Login() {
         <p className="text-center text-slate-400 text-xs mt-6 font-mono-tactical">
           ÑACURUTU SEGURIDAD © 2026 · Vigilancia 24/7
         </p>
+        <div className="flex justify-center mt-2">
+          <VersionBadge compact />
+        </div>
       </div>
     </div>
   );

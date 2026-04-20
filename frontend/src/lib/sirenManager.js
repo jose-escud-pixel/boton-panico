@@ -27,6 +27,13 @@ class SirenManager {
     return this.playing;
   }
 
+  /** Fuerza resume del AudioContext (útil cuando vuelve de background). */
+  resume() {
+    if (this.ctx && this.ctx.state === "suspended") {
+      this.ctx.resume().catch(() => {});
+    }
+  }
+
   start() {
     if (this.playing) return;
     const ctx = this._ensureCtx();

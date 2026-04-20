@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useSocket } from "../../context/SocketContext";
 import { useAlertAudio } from "../../context/AlertAudioContext";
+import VersionBadge from "../../components/VersionBadge";
 
 const navItems = [
   { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard", test: "nav-dashboard" },
@@ -109,6 +110,10 @@ export default function AdminLayout() {
             <LogOut className="w-4 h-4 mr-2" strokeWidth={1.8} />
             Cerrar sesión
           </Button>
+
+          <div className="pt-2 border-t border-slate-100">
+            <VersionBadge />
+          </div>
         </div>
       </aside>
 

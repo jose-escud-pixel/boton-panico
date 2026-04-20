@@ -59,8 +59,12 @@ export function AlertAudioProvider({ children }) {
         if (!best || p > (TYPE_PRIORITY[best.type] || 0)) best = a;
       }
       if (best) {
+        // Resume AudioContext (por si se suspendió en background)
+        sirenManager.resume();
         // Re-asegurar que la sirena siga sonando (por si el navegador la cortó)
         if (!sirenManager.isPlaying()) sirenManager.start();
+        // Chrome a veces para speechSynthesis tras ~15s — kick con resume
+        try { window.speechSynthesis.resume(); } catch {}
         speak(best.phrase);
       }
     }, REPEAT_INTERVAL_MS);
@@ -101,16 +105,73 @@ export function AlertAudioProvider({ children }) {
     }
   }, [user, enablePush]);
 
-  // Carga alertas pendientes existentes (sin hacer sonar — admin ya estaba informado)
+  // Primer gesto del admin en la página → resume AudioContext.
+  // Sin esto, Chrome/Firefox no reproducen audio (autoplay policy) si el
+  // usuario abrió la pestaña y nunca hizo click antes de que llegue una alerta.
+  useEffect(() => {
+    if (!user || user === false || user.role === "client") return;
+    const onFirstInteraction = () => {
+      sirenManager.resume();
+      // Si hay pendientes y la sirena aún no suena, arrancarla ahora
+      if (pendingAlertsRef.current.size > 0 && !sirenManager.isPlaying()) {
+        sirenManager.start();
+        if (!repeatIntervalRef.current) startRepeatLoop();
+      }
+    };
+    document.addEventListener("click", onFirstInteraction, { once: true });
+    document.addEventListener("keydown", onFirstInteraction, { once: true });
+    return () => {
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
+    };
+  }, [user, startRepeatLoop]);
+
+  // Carga alertas pendientes existentes Y arranca sirena si hay pendientes
+  // (si el admin abre la página con pánicos sin resolver, deben sonar igual)
   useEffect(() => {
     if (!user || user === false || user.role === "client") return;
     (async () => {
       try {
         const { data } = await api.get("/alerts?status=pending&limit=500");
         pendingIdsRef.current = new Set(data.map((a) => a.id));
+        pendingAlertsRef.current.clear();
+        data.forEach((a) => {
+          pendingAlertsRef.current.set(a.id, {
+            type: a.type,
+            phrase: PHRASES[a.type] || "Alerta pendiente",
+          });
+        });
+        if (pendingAlertsRef.current.size > 0) {
+          // Arrancar sirena + voz — AudioContext puede requerir gesto del usuario
+          // pero luego el loop mantiene todo vivo
+          sirenManager.start();
+          // Hablar de inmediato la más urgente
+          let best = null;
+          for (const a of pendingAlertsRef.current.values()) {
+            const p = TYPE_PRIORITY[a.type] || 0;
+            if (!best || p > (TYPE_PRIORITY[best.type] || 0)) best = a;
+          }
+          if (best) setTimeout(() => speak(best.phrase), 800);
+          startRepeatLoop();
+        }
       } catch {}
     })();
-  }, [user]);
+  }, [user, startRepeatLoop]);
+
+  // Page visibility: cuando el admin vuelve a la pestaña, si había pendientes
+  // y la sirena se silenció por autoplay policy, la reanuda.
+  useEffect(() => {
+    if (!user || user === false || user.role === "client") return;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      if (pendingAlertsRef.current.size === 0) return;
+      sirenManager.resume();
+      if (!sirenManager.isPlaying()) sirenManager.start();
+      if (!repeatIntervalRef.current) startRepeatLoop();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [user, startRepeatLoop]);
 
   const showNotification = useCallback((alert) => {
     if (!("Notification" in window)) return;

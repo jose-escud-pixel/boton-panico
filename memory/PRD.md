@@ -91,6 +91,16 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ `APP_BUILD` embebido en el bundle JS vía sed antes de `yarn build` (no requiere intervención manual)
 - ✅ Script reordenado: counter + APP_BUILD update → yarn build → cap sync → gradle versionCode/versionName
 
+## Update 2026-04-20 (iteración 6 — Sirena robusta + Version Badge)
+- ✅ Fix crítico: al cargar la página del admin (o recargar), si hay alertas pendientes la sirena + voz arrancan automáticamente (antes quedaba silencio)
+- ✅ Page Visibility API: cuando el admin vuelve a la pestaña, si había pendientes y la sirena se silenció por autoplay policy, se reanuda
+- ✅ First-interaction listener: primer click/tecla del admin hace resume del AudioContext → garantiza que la sirena pueda sonar pase lo que pase
+- ✅ `sirenManager.resume()` llamado en cada tick del loop (contra autoplay policy)
+- ✅ `window.speechSynthesis.resume()` llamado en cada tick (contra bug de Chrome que para TTS tras 15s)
+- ✅ Nuevo `VersionBadge` component visible en Login, Admin sidebar y Client PanicApp footer
+- ✅ Badge muestra plataforma + versión + build (ej: "📱 App · v1.0.0 · build 42")
+- ✅ Click en badge → chequea manualmente si hay nueva versión → muestra "Al día" / "Nueva disponible" / "No se pudo verificar"
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)
