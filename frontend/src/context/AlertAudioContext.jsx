@@ -192,6 +192,8 @@ export function AlertAudioProvider({ children }) {
 
   useEffect(() => {
     if (!socket) return;
+    // Clientes NO escuchan sirena + voz: es feedback para los admins que monitorean
+    if (user && user !== false && user.role === "client") return;
     const onNew = (alert) => {
       pendingIdsRef.current.add(alert.id);
       const phrase = PHRASES[alert.type] || "Alerta nueva";
@@ -220,7 +222,7 @@ export function AlertAudioProvider({ children }) {
       socket.off("alert:new", onNew);
       socket.off("alert:updated", onUpdated);
     };
-  }, [socket, showNotification, startRepeatLoop, stopRepeatLoop]);
+  }, [socket, user, showNotification, startRepeatLoop, stopRepeatLoop]);
 
   const silence = useCallback(() => {
     sirenManager.stop();
