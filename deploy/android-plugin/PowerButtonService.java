@@ -108,9 +108,25 @@ public class PowerButtonService extends Service {
                     presses.remove(0);
                 }
                 presses.add(now);
-                Log.i(TAG, "Screen event " + act + " (count=" + presses.size() + ")");
+                int count = presses.size();
+                Log.i(TAG, "Screen event " + act + " (count=" + count + ")");
 
-                if (presses.size() >= PRESSES_REQUIRED) {
+                // Feedback visible al usuario: vibrar brevemente en cada presión contada,
+                // ayuda a validar que el servicio está recibiendo los eventos correctamente.
+                if (count >= 2) {
+                    try {
+                        android.os.Vibrator vib = (android.os.Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+                        if (vib != null) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                vib.vibrate(android.os.VibrationEffect.createOneShot(50 * count, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+                            } else {
+                                vib.vibrate(50L * count);
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                if (count >= PRESSES_REQUIRED) {
                     presses.clear();
                     Log.w(TAG, "¡PÁNICO POR POWER BUTTON DETECTADO!");
                     PowerButtonPlugin.triggerPanic(context);

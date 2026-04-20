@@ -177,6 +177,8 @@ PERMS_NEEDED=(
     "android.permission.WAKE_LOCK"
     "android.permission.FOREGROUND_SERVICE"
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+    "android.permission.SYSTEM_ALERT_WINDOW"
+    "android.permission.USE_FULL_SCREEN_INTENT"
 )
 
 log "Paso 7d — Verificando permisos en AndroidManifest.xml..."
