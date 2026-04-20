@@ -83,8 +83,17 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ Apache config: Alias `/boton-panico/downloads` con `ForceType application/vnd.android.package-archive` y `Content-Disposition: attachment` para forzar descarga como APK (fix: se bajaba como .html)
 - ✅ Documentación: `/app/deploy/ACTUALIZAR_APP.md`
 
+## Update 2026-04-20 (iteración 5 — Sirena Persistente + Fix Banner OTA + Manifest)
+- ✅ Fix crítico AndroidManifest.xml: script de build inyecta automáticamente permisos de ubicación, cámara, audio, notificaciones, vibración, foreground service, wake lock (resuelve error "Missing the following permissions")
+- ✅ Sirena persistente con voz repetida: la voz TTS ahora se repite cada 8s mientras haya alertas pendientes, priorizando el tipo más crítico (panic > fire > medical > otros)
+- ✅ La sirena Web Audio se reafirma automáticamente en cada ciclo (por si el browser la corta)
+- ✅ Banner de actualización ahora usa `versionCode` (entero auto-incremental) como criterio, NO `APP_VERSION` (string manual) — cada build nuevo dispara banner automáticamente
+- ✅ `APP_BUILD` embebido en el bundle JS vía sed antes de `yarn build` (no requiere intervención manual)
+- ✅ Script reordenado: counter + APP_BUILD update → yarn build → cap sync → gradle versionCode/versionName
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)
 - P2: Responsive mejorado del Admin Dashboard en móvil
 - P2: Instrucciones compilación iOS (requiere cuenta Apple Developer del usuario)
+- P2: Endpoint admin `POST /api/app/release` para bumpear+buildear+publicar APK desde UI

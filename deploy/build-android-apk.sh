@@ -80,6 +80,31 @@ if [ ! -f "$GOOGLE_SERVICES_SRC" ]; then
 fi
 log "Paso 3 — google-services.json OK"
 
+# ---------- Paso 3b: Auto-increment versionCode + sync APP_BUILD en el bundle JS ----------
+# IMPORTANTE: debe correr ANTES de yarn build para que el bundle embebido
+# tenga el APP_BUILD correcto (el que luego se comparará contra version.json).
+VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
+if [ ! -f "$VERSION_CODE_FILE" ]; then
+    echo "1" > "$VERSION_CODE_FILE"
+fi
+
+CURRENT_CODE=$(cat "$VERSION_CODE_FILE")
+NEW_CODE=$((CURRENT_CODE + 1))
+echo "$NEW_CODE" > "$VERSION_CODE_FILE"
+
+APP_VERSION_NAME=$(grep -E "APP_VERSION\s*=" "$FRONTEND_DIR/src/lib/appVersion.js" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+APP_VERSION_NAME="${APP_VERSION_NAME:-1.0.0}"
+
+log "Paso 3b — versionCode: $CURRENT_CODE → $NEW_CODE, versionName: $APP_VERSION_NAME"
+
+# Escribir el nuevo APP_BUILD en appVersion.js para que el bundle JS lo tenga
+APP_VERSION_JS="$FRONTEND_DIR/src/lib/appVersion.js"
+sed -i -E "s/export const APP_BUILD = [0-9]+;/export const APP_BUILD = $NEW_CODE;/" "$APP_VERSION_JS"
+
+if ! grep -q "APP_BUILD = $NEW_CODE;" "$APP_VERSION_JS"; then
+    warn "No se pudo actualizar APP_BUILD en $APP_VERSION_JS"
+fi
+
 # ---------- Paso 4: Build del frontend React ----------
 log "Paso 4 — Compilando frontend React..."
 cd "$FRONTEND_DIR"
@@ -117,22 +142,9 @@ if ! grep -q "google-services" "$BUILD_GRADLE_APP"; then
     echo "apply plugin: 'com.google.gms.google-services'" >> "$BUILD_GRADLE_APP"
 fi
 
-# ---------- Paso 7c: Auto-increment versionCode + versionName ----------
-# Lee APP_VERSION desde appVersion.js y lo usa como versionName.
-# versionCode se incrementa automáticamente y persiste en .apk-version-code.
-VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
-if [ ! -f "$VERSION_CODE_FILE" ]; then
-    echo "1" > "$VERSION_CODE_FILE"
-fi
-
-CURRENT_CODE=$(cat "$VERSION_CODE_FILE")
-NEW_CODE=$((CURRENT_CODE + 1))
-echo "$NEW_CODE" > "$VERSION_CODE_FILE"
-
-APP_VERSION_NAME=$(grep -E "APP_VERSION\s*=" "$FRONTEND_DIR/src/lib/appVersion.js" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-APP_VERSION_NAME="${APP_VERSION_NAME:-1.0.0}"
-
-log "Paso 7c — versionCode: $CURRENT_CODE → $NEW_CODE, versionName: $APP_VERSION_NAME"
+# ---------- Paso 7c: Aplicar versionCode + versionName al gradle ----------
+# El valor de NEW_CODE y APP_VERSION_NAME ya se calcularon en Paso 3b.
+log "Paso 7c — Aplicando versionCode=$NEW_CODE al app/build.gradle"
 
 # Reemplazar versionCode y versionName en app/build.gradle
 sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $NEW_CODE/" "$BUILD_GRADLE_APP"

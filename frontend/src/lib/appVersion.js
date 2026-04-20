@@ -1,15 +1,20 @@
 /**
  * Versión actual de la app embebida en el bundle.
- * BUMP esta variable antes de compilar cada nueva APK.
- * El build-android-apk.sh también usa este valor para generar version.json.
  *
- * Formato semver (mayor.menor.patch) — la comparación es numérica pieza por pieza.
+ * APP_VERSION (string) — nombre visible de la versión, ej: "1.0.0".
+ *   Se muestra en la UI. Bumpealo a mano cuando quieras cambiar el nombre.
+ *
+ * APP_BUILD (integer) — número de build. Se AUTO-INCREMENTA en cada ejecución de
+ *   build-android-apk.sh. Es el valor que realmente dispara el banner de
+ *   actualización: si el remote tiene un APP_BUILD mayor, se muestra el banner.
+ *   NO lo edites a mano; el script lo maneja.
  */
 export const APP_VERSION = "1.0.0";
+export const APP_BUILD = 1;
 
 /**
  * URL del archivo version.json que publica el servidor.
- * Debe devolver: { "version": "1.0.1", "apk_url": "...", "changelog": "..." }
+ * Debe devolver: { "version": "1.0.1", "versionCode": 5, "apk_url": "...", "changelog": "..." }
  */
 export const VERSION_JSON_URL = "/boton-panico/downloads/version.json";
 

@@ -15,15 +15,63 @@ const PHRASES = {
   normal: "Alerta nueva",
 };
 
+// Prioridad para decidir qué frase repetir cuando hay varias alertas pendientes
+const TYPE_PRIORITY = {
+  panic: 5,
+  fire: 4,
+  medical: 3,
+  silent: 3,
+  normal: 2,
+  on_way: 2,
+  here: 1,
+};
+
+// Cada cuánto se repite la voz TTS mientras hay alertas pendientes (ms)
+const REPEAT_INTERVAL_MS = 8000;
+
 const AlertAudioContext = createContext(null);
 
 export function AlertAudioProvider({ children }) {
   const { socket } = useSocket();
   const { user } = useAuth();
   const pendingIdsRef = useRef(new Set());
+  // Map<alertId, { type, phrase }> — info para saber qué frase decir
+  const pendingAlertsRef = useRef(new Map());
+  const repeatIntervalRef = useRef(null);
   const notifPermRef = useRef("default");
   const [pushStatus, setPushStatus] = useState("idle"); // idle | enabled | denied | unsupported | error
   const [pushLoading, setPushLoading] = useState(false);
+
+  const startRepeatLoop = useCallback(() => {
+    if (repeatIntervalRef.current) return; // ya está corriendo
+    repeatIntervalRef.current = setInterval(() => {
+      const alerts = pendingAlertsRef.current;
+      if (alerts.size === 0) {
+        clearInterval(repeatIntervalRef.current);
+        repeatIntervalRef.current = null;
+        if (sirenManager.isPlaying()) sirenManager.stop();
+        return;
+      }
+      // Hablar el tipo más urgente de los pendientes
+      let best = null;
+      for (const a of alerts.values()) {
+        const p = TYPE_PRIORITY[a.type] || 0;
+        if (!best || p > (TYPE_PRIORITY[best.type] || 0)) best = a;
+      }
+      if (best) {
+        // Re-asegurar que la sirena siga sonando (por si el navegador la cortó)
+        if (!sirenManager.isPlaying()) sirenManager.start();
+        speak(best.phrase);
+      }
+    }, REPEAT_INTERVAL_MS);
+  }, []);
+
+  const stopRepeatLoop = useCallback(() => {
+    if (repeatIntervalRef.current) {
+      clearInterval(repeatIntervalRef.current);
+      repeatIntervalRef.current = null;
+    }
+  }, []);
 
   const enablePush = useCallback(async () => {
     setPushLoading(true);
@@ -86,15 +134,20 @@ export function AlertAudioProvider({ children }) {
     const onNew = (alert) => {
       pendingIdsRef.current.add(alert.id);
       const phrase = PHRASES[alert.type] || "Alerta nueva";
+      // Guardar info para que el loop de repetición hable el tipo más urgente
+      pendingAlertsRef.current.set(alert.id, { type: alert.type, phrase });
       sirenManager.start();
       setTimeout(() => speak(phrase), 1200);
       showNotification(alert);
+      startRepeatLoop();
     };
     const onUpdated = (alert) => {
       if (alert.status && alert.status !== "pending") {
         pendingIdsRef.current.delete(alert.id);
-        if (pendingIdsRef.current.size === 0 && sirenManager.isPlaying()) {
-          sirenManager.stop();
+        pendingAlertsRef.current.delete(alert.id);
+        if (pendingIdsRef.current.size === 0) {
+          stopRepeatLoop();
+          if (sirenManager.isPlaying()) sirenManager.stop();
         }
       } else if (alert.status === "pending") {
         pendingIdsRef.current.add(alert.id);
@@ -106,12 +159,14 @@ export function AlertAudioProvider({ children }) {
       socket.off("alert:new", onNew);
       socket.off("alert:updated", onUpdated);
     };
-  }, [socket, showNotification]);
+  }, [socket, showNotification, startRepeatLoop, stopRepeatLoop]);
 
   const silence = useCallback(() => {
     sirenManager.stop();
+    stopRepeatLoop();
     pendingIdsRef.current.clear();
-  }, []);
+    pendingAlertsRef.current.clear();
+  }, [stopRepeatLoop]);
 
   return (
     <AlertAudioContext.Provider

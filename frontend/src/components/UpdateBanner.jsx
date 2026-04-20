@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { Download, X, Sparkles } from "lucide-react";
-import { APP_VERSION, APK_URL, compareVersions, fetchRemoteVersion } from "../lib/appVersion";
+import { APP_VERSION, APP_BUILD, APK_URL, fetchRemoteVersion } from "../lib/appVersion";
 import { isNative } from "../lib/nativePush";
 
 /**
  * Banner que detecta si hay una nueva versión de la APK disponible.
  * Sólo se muestra en la app nativa (Capacitor), nunca en web
  * (los usuarios web siempre tienen la última versión).
+ *
+ * Criterio: versionCode (entero auto-incremental). Si el remote tiene un
+ * versionCode mayor que APP_BUILD embebido, aparece el banner.
  */
 export default function UpdateBanner() {
   const [remote, setRemote] = useState(null);
@@ -17,8 +20,9 @@ export default function UpdateBanner() {
     let cancelled = false;
     (async () => {
       const data = await fetchRemoteVersion();
-      if (cancelled) return;
-      if (data && compareVersions(data.version, APP_VERSION) > 0) {
+      if (cancelled || !data) return;
+      const remoteCode = parseInt(data.versionCode, 10) || 0;
+      if (remoteCode > APP_BUILD) {
         setRemote(data);
       }
     })();
@@ -33,14 +37,15 @@ export default function UpdateBanner() {
     : `https://www.aranduinformatica.net${apkUrl}`;
 
   const handleUpdate = () => {
-    // En Capacitor, _system abre el navegador externo del teléfono,
-    // que descarga el APK y dispara el instalador de Android.
     try {
       window.open(absoluteUrl, "_system");
     } catch {
       window.location.href = absoluteUrl;
     }
   };
+
+  const displayVersion = remote.version || `build ${remote.versionCode}`;
+  const currentLabel = `actual: ${APP_VERSION} (build ${APP_BUILD})`;
 
   return (
     <div
@@ -51,10 +56,10 @@ export default function UpdateBanner() {
         <Sparkles className="w-5 h-5 flex-shrink-0" strokeWidth={2} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold leading-tight">
-            Nueva versión {remote.version} disponible
+            Nueva versión {displayVersion} disponible
           </div>
           <div className="text-xs text-rose-100 mt-0.5 truncate">
-            {remote.changelog || "Actualizá para obtener las últimas mejoras"}
+            {remote.changelog || currentLabel}
           </div>
         </div>
         <button
