@@ -13,13 +13,15 @@ import { OwlLogo } from "../../components/OwlLogo";
 import {
   Mic, MicOff, Image as ImageIcon, X, LogOut, Loader2,
   History, Flame, HeartPulse, Navigation, MapPin, Siren,
-  CheckCircle2, Clock, AlertCircle, Send, Ban,
+  CheckCircle2, Clock, AlertCircle, Send, Ban, Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { getNativeLocation, isNative } from "../../lib/nativePush";
+import { applyPowerButtonPref } from "../../lib/powerButtonPanic";
+import ClientSettingsDialog from "../../components/ClientSettingsDialog";
 import UpdateBanner from "../../components/UpdateBanner";
 import VersionBadge from "../../components/VersionBadge";
 
@@ -52,6 +54,7 @@ export default function PanicApp() {
   const [shake, setShake] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [message, setMessage] = useState("");
   const [imageDataUrl, setImageDataUrl] = useState("");
@@ -93,8 +96,36 @@ export default function PanicApp() {
           console.warn("No se pudo solicitar permiso de ubicación:", e);
         }
       })();
+      // Si el usuario tenía activado el "power button panic", lo re-arrancamos
+      // (el servicio se mata en reboots del teléfono).
+      applyPowerButtonPref();
     }
   }, [loadOrg, loadHistory]);
+
+  // Deep link listener: cuando el servicio nativo dispara 5 presiones del
+  // power button, abre la app con URL `nacurutu://panic?source=power_button`.
+  // Al detectarla, disparamos pánico automáticamente.
+  useEffect(() => {
+    if (!isNative()) return;
+    let listenerHandle = null;
+    (async () => {
+      try {
+        const { App } = await import("@capacitor/app");
+        listenerHandle = await App.addListener("appUrlOpen", (event) => {
+          if (event?.url && event.url.startsWith("nacurutu://panic")) {
+            // Dispara pánico SIN countdown (emergencia real)
+            triggerPowerButtonPanic();
+          }
+        });
+      } catch (e) {
+        console.warn("No se pudo registrar listener de deep link:", e);
+      }
+    })();
+    return () => {
+      try { listenerHandle?.remove?.(); } catch {}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getLocation = async () => {
     try {
@@ -159,6 +190,35 @@ export default function PanicApp() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeType, sending, message, imageDataUrl, audioDataUrl]);
+
+  // Dispara pánico INMEDIATO sin countdown ni dialog (llamado desde deep link
+  // cuando el usuario presionó 5 veces el botón de encendido).
+  const triggerPowerButtonPanic = useCallback(async () => {
+    if (sending) return;
+    setSending(true);
+    setShake(true);
+    setTimeout(() => setShake(false), 500);
+    if (navigator.vibrate) navigator.vibrate([200, 100, 400]);
+    try {
+      const location = await getLocation();
+      await api.post("/alerts", {
+        type: "panic",
+        message: "Pánico automático (botón de encendido x5)",
+        image_url: null,
+        audio_url: null,
+        location,
+      });
+      toast.success("Pánico enviado por botón de encendido", {
+        description: "Ayuda en camino. Mantén la calma.",
+      });
+      loadHistory();
+    } catch (e) {
+      toast.error(e.response ? formatApiError(e.response?.data?.detail) : e.message);
+    } finally {
+      setSending(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sending]);
 
   // Countdown SÓLO para pánico. Pausa automática al pausar (paused=true).
   useEffect(() => {
@@ -249,6 +309,11 @@ export default function PanicApp() {
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)}
+                  className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  data-testid="open-settings-button">
+            <Settings className="w-5 h-5" strokeWidth={1.8} />
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}
                   className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                   data-testid="open-history-button">
@@ -516,6 +581,8 @@ export default function PanicApp() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ClientSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

@@ -176,6 +176,7 @@ PERMS_NEEDED=(
     "android.permission.READ_EXTERNAL_STORAGE"
     "android.permission.WAKE_LOCK"
     "android.permission.FOREGROUND_SERVICE"
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
 )
 
 log "Paso 7d — Verificando permisos en AndroidManifest.xml..."
@@ -192,6 +193,49 @@ if [ "$ADDED_COUNT" -eq 0 ]; then
     log "   Todos los permisos ya estaban presentes."
 else
     log "   $ADDED_COUNT permiso(s) agregado(s) al manifest."
+fi
+
+# ---------- Paso 7e: Instalar plugin nativo PowerButtonPanic ----------
+log "Paso 7e — Instalando plugin nativo PowerButtonPanic..."
+JAVA_PKG_DIR="$ANDROID_DIR/app/src/main/java/net/aranduinformatica/nacurutu"
+PLUGIN_SRC_DIR="$PROJECT_ROOT/deploy/android-plugin"
+
+if [ ! -d "$JAVA_PKG_DIR" ]; then
+    err "No existe $JAVA_PKG_DIR (¿cambió el appId?). Saltando instalación del plugin."
+else
+    cp "$PLUGIN_SRC_DIR/PowerButtonPlugin.java" "$JAVA_PKG_DIR/PowerButtonPlugin.java"
+    cp "$PLUGIN_SRC_DIR/PowerButtonService.java" "$JAVA_PKG_DIR/PowerButtonService.java"
+    log "   + Copiado PowerButtonPlugin.java"
+    log "   + Copiado PowerButtonService.java"
+
+    # Registrar plugin en MainActivity.java
+    MAIN_ACTIVITY="$JAVA_PKG_DIR/MainActivity.java"
+    if [ -f "$MAIN_ACTIVITY" ] && ! grep -q "PowerButtonPlugin.class" "$MAIN_ACTIVITY"; then
+        # Insertar registerPlugin ANTES del super.onCreate
+        if grep -q "super.onCreate" "$MAIN_ACTIVITY"; then
+            sed -i '/super\.onCreate/i\        registerPlugin(PowerButtonPlugin.class);' "$MAIN_ACTIVITY"
+            log "   + Plugin registrado en MainActivity.java"
+        else
+            # MainActivity minimal (no tiene onCreate override) — añadir método
+            sed -i '/public class MainActivity/a\    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        registerPlugin(PowerButtonPlugin.class);\n        super.onCreate(savedInstanceState);\n    }' "$MAIN_ACTIVITY"
+            log "   + onCreate agregado a MainActivity.java"
+        fi
+    fi
+
+    # Registrar <service> en AndroidManifest.xml dentro de <application>
+    if ! grep -q "PowerButtonService" "$MANIFEST"; then
+        SERVICE_BLOCK='        <service\n            android:name=".PowerButtonService"\n            android:enabled="true"\n            android:exported="false"\n            android:foregroundServiceType="specialUse">\n            <property\n                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"\n                android:value="Vigilancia del boton de panico para emergencias personales" \/>\n        <\/service>'
+        sed -i "/<\/application>/i\\$SERVICE_BLOCK" "$MANIFEST"
+        log "   + <service> PowerButtonService agregado al manifest"
+    fi
+
+    # Agregar intent-filter para scheme nacurutu:// dentro del MainActivity activity
+    if ! grep -q "android:scheme=\"nacurutu\"" "$MANIFEST"; then
+        INTENT_BLOCK='            <intent-filter>\n                <action android:name="android.intent.action.VIEW" \/>\n                <category android:name="android.intent.category.DEFAULT" \/>\n                <category android:name="android.intent.category.BROWSABLE" \/>\n                <data android:scheme="nacurutu" \/>\n            <\/intent-filter>'
+        # Insertar antes del cierre del <activity> principal (después del intent-filter LAUNCHER)
+        sed -i "/<\/activity>/i\\$INTENT_BLOCK" "$MANIFEST"
+        log "   + intent-filter nacurutu:// agregado al manifest"
+    fi
 fi
 
 # ---------- Paso 8: Build APK debug ----------
