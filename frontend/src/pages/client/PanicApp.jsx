@@ -27,6 +27,7 @@ import { useTheme } from "../../context/ThemeContext";
 import ClientSettingsDialog from "../../components/ClientSettingsDialog";
 import UpdateBanner from "../../components/UpdateBanner";
 import VersionBadge from "../../components/VersionBadge";
+import SponsorContacts from "../../components/SponsorContacts";
 
 const ALERT_TYPES = {
   panic:   { label: "SOS",        Icon: Siren,      accent: "rose",     voice: "Pánico" },
@@ -422,7 +423,7 @@ export default function PanicApp() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="mb-6"
+          className="mb-4"
         >
           <h2 className={`font-heading text-2xl font-bold tracking-tight ${
             isDark ? "text-white" : "text-slate-900"
@@ -430,6 +431,15 @@ export default function PanicApp() {
             Mis alertas
           </h2>
           <div className={`h-px mt-3 ${isDark ? "bg-slate-700" : "bg-slate-200"}`} />
+        </motion.div>
+
+        {/* Sponsor / Contactos */}
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+        >
+          <SponsorContacts isDark={isDark} />
         </motion.div>
 
         {/* ========== SOS BUTTON ========== */}
