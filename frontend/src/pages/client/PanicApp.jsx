@@ -22,6 +22,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { getNativeLocation, isNative } from "../../lib/nativePush";
 import { applyPowerButtonPref } from "../../lib/powerButtonPanic";
+import { readDeviceInfo, bindDeviceToBackend } from "../../lib/deviceBind";
 import { useTheme } from "../../context/ThemeContext";
 import ClientSettingsDialog from "../../components/ClientSettingsDialog";
 import UpdateBanner from "../../components/UpdateBanner";
@@ -110,8 +111,25 @@ export default function PanicApp() {
       // Si el usuario tenía activado el "power button panic", lo re-arrancamos
       // (el servicio se mata en reboots del teléfono).
       applyPowerButtonPref();
+
+      // Device binding: primera vez que abre la app tras login se captura
+      // info del teléfono y se vincula al usuario. Si el servidor detecta
+      // que la cuenta ya está ligada a otro device → 423 Locked y cerramos sesión.
+      (async () => {
+        const info = await readDeviceInfo();
+        if (!info) return;
+        const api = (await import("../../lib/api")).default;
+        const res = await bindDeviceToBackend(api);
+        if (!res.ok && res.status === 423) {
+          toast.error(res.detail || "Esta cuenta está vinculada a otro dispositivo.");
+          setTimeout(() => {
+            logout();
+            navigate("/login");
+          }, 1500);
+        }
+      })();
     }
-  }, [loadOrg, loadHistory]);
+  }, [loadOrg, loadHistory, logout, navigate]);
 
   // Deep link listener: cuando el servicio nativo dispara 5 presiones del
   // power button, abre la app con URL `nacurutu://panic?source=power_button`.

@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { SocketProvider } from "./context/SocketContext";
 import { AlertAudioProvider } from "./context/AlertAudioContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { OrgProvider } from "./context/OrgContext";
 import { Toaster } from "./components/ui/sonner";
 
 import Login from "./pages/Login";
@@ -51,10 +52,11 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <SocketProvider>
-          <AlertAudioProvider>
-            <BrowserRouter basename={BASENAME}>
-            <Routes>
+        <OrgProvider>
+          <SocketProvider>
+            <AlertAudioProvider>
+              <BrowserRouter basename={BASENAME}>
+              <Routes>
             <Route path="/login" element={<Login />} />
             <Route
               path="/client"
@@ -90,9 +92,10 @@ function App() {
               },
             }}
           />
-          </BrowserRouter>
-          </AlertAudioProvider>
-        </SocketProvider>
+            </BrowserRouter>
+            </AlertAudioProvider>
+          </SocketProvider>
+        </OrgProvider>
       </AuthProvider>
     </ThemeProvider>
   );

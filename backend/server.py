@@ -30,6 +30,7 @@ from models import (
     UserCreate,
     UserUpdate,
     LoginRequest,
+    DeviceBind,
     AlertCreate,
     AlertStatusUpdate,
     Permissions,
@@ -216,6 +217,65 @@ async def app_version():
     return {"versionCode": build, "enforced": build is not None}
 
 
+@api.post("/app/device-bind")
+async def device_bind(payload: DeviceBind, user: dict = Depends(get_current_user)):
+    """Vincula (bind) un dispositivo a un usuario cliente.
+    - Si el usuario NO tiene device_id → se guarda el del payload.
+    - Si YA tiene device_id y coincide con el del payload → se actualiza info (modelo, build).
+    - Si YA tiene device_id y es DIFERENTE → 423 Locked (reset requerido por admin).
+    Admin y super_admin quedan exentos del lock.
+    """
+    if user.get("role") != "client":
+        # Admins no se bloquean por device
+        return {"ok": True, "skipped": True}
+
+    saved = (user.get("device_id") or "").strip()
+    incoming = payload.device_id.strip()
+    now = datetime.now(timezone.utc).isoformat()
+
+    if saved and saved != incoming:
+        raise HTTPException(
+            status_code=423,
+            detail="Esta cuenta está vinculada a otro dispositivo. Contactá al administrador.",
+        )
+
+    update = {
+        "device_id": incoming,
+        "device_brand": payload.brand,
+        "device_model": payload.model,
+        "device_platform": payload.platform,
+        "device_os_version": payload.os_version,
+        "device_app_build": payload.app_build,
+        "device_last_seen": now,
+    }
+    if not saved:
+        # Primera vez que se bindea
+        update["device_bound_at"] = now
+
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+    return {"ok": True, "bound_at": update.get("device_bound_at")}
+
+
+@api.post("/users/{user_id}/unbind-device")
+async def unbind_device(user_id: str, user: dict = Depends(require_admin)):
+    """Admin/Super Admin libera el device binding de un usuario (para que pueda
+    loguearse desde un teléfono nuevo tras cambio de celular o similar)."""
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user["role"] == "admin" and target.get("organization_id") != user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Cannot unbind user from another org")
+    await db.users.update_one(
+        {"id": user_id},
+        {"$unset": {
+            "device_id": "", "device_brand": "", "device_model": "",
+            "device_platform": "", "device_os_version": "", "device_app_build": "",
+            "device_bound_at": "", "device_last_seen": "",
+        }},
+    )
+    return {"ok": True}
+
+
 # ======================================================
 # AUTH
 # ======================================================
@@ -265,24 +325,34 @@ async def login(payload: LoginRequest, request: Request, response: Response):
                 detail="Acceso permitido sólo desde la app móvil ÑACURUTU Seguridad. Descargala e ingresá desde allí.",
             )
 
-        # ------- Versión estricta de la APK -------
-        # Lee el versionCode requerido desde version.json publicado por el
-        # script build-android-apk.sh. Si no coincide exactamente con el
-        # X-App-Build del header, se bloquea el login forzando actualizar.
-        required_build = _get_required_app_build()
-        if required_build is not None:
-            try:
-                app_build = int(request.headers.get("x-app-build", "0"))
-            except (TypeError, ValueError):
-                app_build = 0
-            if app_build != required_build:
-                raise HTTPException(
-                    status_code=426,  # Upgrade Required
-                    detail=(
-                        f"Versión desactualizada (build {app_build}). "
-                        f"Actualizá la app a la versión más reciente (build {required_build}) para continuar."
-                    ),
-                )
+        # ------- Versión de la APK (solo informativo, no bloquea) -------
+        # El check estricto fue deshabilitado a pedido del usuario: el banner
+        # UpdateBanner sigue notificando al cliente cuando hay nueva versión,
+        # pero el login ya no se bloquea por mismatch de build.
+        # Si querés re-habilitar, descomentá el bloque:
+        # required_build = _get_required_app_build()
+        # if required_build is not None:
+        #     try:
+        #         app_build = int(request.headers.get("x-app-build", "0"))
+        #     except (TypeError, ValueError):
+        #         app_build = 0
+        #     if app_build != required_build:
+        #         raise HTTPException(status_code=426, detail="Versión desactualizada...")
+        pass
+
+        # ------- Device binding (1 teléfono por cliente) -------
+        # Si el cliente ya tiene un device_id guardado, el del request debe coincidir.
+        # Si no tiene ninguno guardado, se acepta cualquiera (se bindea en device-bind).
+        incoming_device_id = (request.headers.get("x-device-id") or "").strip()
+        saved_device_id = (user.get("device_id") or "").strip()
+        if saved_device_id and incoming_device_id and saved_device_id != incoming_device_id:
+            raise HTTPException(
+                status_code=423,  # Locked
+                detail=(
+                    "Esta cuenta está vinculada a otro dispositivo. "
+                    "Contactá al administrador para desvincularla."
+                ),
+            )
 
     access_token = create_access_token(
         user["id"], user["email"], user["role"], user.get("organization_id")
@@ -411,6 +481,9 @@ async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
         "username": username,
         "password_hash": hash_password(payload.password),
         "name": payload.name,
+        "first_name": payload.first_name,
+        "last_name": payload.last_name,
+        "phone": payload.phone,
         "role": payload.role,
         "organization_id": payload.organization_id,
         "permissions": payload.permissions.model_dump(),

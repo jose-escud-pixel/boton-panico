@@ -29,8 +29,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Unlock, Smartphone } from "lucide-react";
 import { toast } from "sonner";
+import { useOrg } from "../../context/OrgContext";
+import ChipFilter from "../../components/ChipFilter";
 
 const ROLE_STYLE = {
   super_admin: "bg-rose-50 text-rose-700 border-rose-200",
@@ -40,18 +42,23 @@ const ROLE_STYLE = {
 
 export default function Users() {
   const { user: me } = useAuth();
+  const { activeOrgId, isAll } = useOrg();
   const [users, setUsers] = useState([]);
   const [orgs, setOrgs] = useState([]);
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(initialForm());
   const [saving, setSaving] = useState(false);
+  const [chips, setChips] = useState([]);
 
   function initialForm() {
     return {
       id: null,
       email: "",
       username: "",
+      first_name: "",
+      last_name: "",
+      phone: "",
       password: "",
       name: "",
       role: "client",
@@ -91,6 +98,9 @@ export default function Users() {
       id: u.id,
       email: u.email,
       username: u.username || "",
+      first_name: u.first_name || "",
+      last_name: u.last_name || "",
+      phone: u.phone || "",
       password: "",
       name: u.name,
       role: u.role,
@@ -153,8 +163,54 @@ export default function Users() {
     }
   };
 
+  const unbindDevice = async (u) => {
+    if (!window.confirm(`Desvincular el dispositivo de ${u.name}? Podrá loguearse desde un celular nuevo.`)) return;
+    try {
+      await api.post(`/users/${u.id}/unbind-device`);
+      toast.success("Dispositivo desvinculado");
+      load();
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    }
+  };
+
   const orgMap = Object.fromEntries(orgs.map((o) => [o.id, o.name]));
   const canCreateAdmin = me?.role === "super_admin";
+
+  // ---- Filtrado por chips + org activa ----
+  const filteredUsers = users.filter((u) => {
+    // Org activa (solo super_admin)
+    if (me?.role === "super_admin" && activeOrgId && !isAll) {
+      if (u.organization_id !== activeOrgId) return false;
+    }
+    for (const c of chips) {
+      const v = c.value.toLowerCase();
+      if (c.key === "role") {
+        if (u.role !== v) return false;
+      } else if (c.key === "status") {
+        const s = u.status || "active";
+        if (s !== v) return false;
+      } else if (c.key === "access") {
+        if ((u.access_type || "permanent") !== v) return false;
+      } else if (c.key === "org") {
+        const orgName = (orgMap[u.organization_id] || "").toLowerCase();
+        if (!orgName.includes(v)) return false;
+      } else if (c.key === "device") {
+        // device:yes | device:no (si tiene o no device asociado)
+        const has = !!(u.device_id);
+        const want = v === "yes" || v === "sí" || v === "si";
+        if (has !== want) return false;
+      } else {
+        // user: o texto libre → busca en name, email, username, phone, model, brand
+        const haystack = [
+          u.name, u.email, u.username, u.first_name, u.last_name,
+          u.phone, u.device_brand, u.device_model, u.device_platform,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!haystack.includes(v)) return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto" data-testid="admin-users">
@@ -172,55 +228,106 @@ export default function Users() {
         </Button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <div className="mb-4">
+        <ChipFilter
+          chips={chips}
+          onChange={setChips}
+          placeholder="Buscar: role:client, status:active, access:custom, device:yes, teléfono, marca..."
+          suggestions={{
+            status: ["active", "disabled"],
+          }}
+        />
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-slate-200 hover:bg-transparent">
-                <TableHead className="overline text-slate-500">Nombre</TableHead>
-                <TableHead className="overline text-slate-500">Email</TableHead>
-                <TableHead className="overline text-slate-500">Rol</TableHead>
-                <TableHead className="overline text-slate-500">Organización</TableHead>
-                <TableHead className="overline text-slate-500 text-right">Acciones</TableHead>
+              <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent">
+                <TableHead className="overline text-slate-500 dark:text-slate-400">Nombre</TableHead>
+                <TableHead className="overline text-slate-500 dark:text-slate-400">Contacto</TableHead>
+                <TableHead className="overline text-slate-500 dark:text-slate-400">Rol</TableHead>
+                <TableHead className="overline text-slate-500 dark:text-slate-400">Organización</TableHead>
+                <TableHead className="overline text-slate-500 dark:text-slate-400">Dispositivo</TableHead>
+                <TableHead className="overline text-slate-500 dark:text-slate-400 text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((u) => {
+              {filteredUsers.map((u) => {
                 const isSelf = me?.id === u.id;
                 const ROLE_LEVEL = { super_admin: 3, admin: 2, client: 1 };
                 const canModify = !isSelf && (ROLE_LEVEL[me?.role] || 0) > (ROLE_LEVEL[u.role] || 0);
+                const fullName = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.name;
                 return (
-                <TableRow key={u.id} className="border-slate-100 hover:bg-slate-50" data-testid="user-row">
-                  <TableCell className="font-heading font-semibold text-slate-900">
-                    <div className="flex items-center gap-2">
+                <TableRow key={u.id} className="border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50" data-testid="user-row">
+                  <TableCell className="font-heading font-semibold text-slate-900 dark:text-white">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {u.status === "disabled" && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.55rem] font-mono bg-slate-200 text-slate-600 uppercase tracking-wider">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.55rem] font-mono bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 uppercase tracking-wider">
                           desactivado
                         </span>
                       )}
                       {u.access_type && u.access_type !== "permanent" && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.55rem] font-mono bg-amber-100 text-amber-800 uppercase tracking-wider"
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.55rem] font-mono bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 uppercase tracking-wider"
                               title={`${u.access_type}${u.access_start ? ` desde ${u.access_start}` : ""}${u.access_end ? ` hasta ${u.access_end}` : ""}`}>
                           {u.access_type}
                         </span>
                       )}
-                      <span>{u.name}</span>
-                      {isSelf && <span className="text-[0.6rem] text-slate-400 font-mono-tactical">(TÚ)</span>}
+                      <span>{fullName}</span>
+                      {u.username && (
+                        <span className="text-[0.6rem] text-slate-500 dark:text-slate-400 font-mono">@{u.username}</span>
+                      )}
+                      {isSelf && <span className="text-[0.6rem] text-slate-400 dark:text-slate-500 font-mono-tactical">(TÚ)</span>}
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-600 text-sm">{u.email}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300 text-xs">
+                    <div className="truncate max-w-[180px]">{u.email}</div>
+                    {u.phone && <div className="text-slate-500 font-mono mt-0.5">{u.phone}</div>}
+                  </TableCell>
                   <TableCell>
                     <Badge className={`rounded ${ROLE_STYLE[u.role]}`}>{u.role}</Badge>
                   </TableCell>
-                  <TableCell className="text-slate-700 text-sm">{orgMap[u.organization_id] || "—"}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-slate-700 dark:text-slate-300 text-sm">{orgMap[u.organization_id] || "—"}</TableCell>
+                  <TableCell className="text-xs">
+                    {u.device_id ? (
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-slate-700 dark:text-slate-200">
+                          <Smartphone className="w-3 h-3 text-emerald-600" strokeWidth={2} />
+                          <span className="font-semibold">{u.device_brand || "Desconocido"}</span>
+                          <span className="text-slate-500">{u.device_model || ""}</span>
+                        </div>
+                        <div className="font-mono text-[0.6rem] text-slate-500 dark:text-slate-400">
+                          {u.device_platform}{u.device_os_version ? ` ${u.device_os_version}` : ""}
+                          {u.device_app_build ? ` · build ${u.device_app_build}` : ""}
+                        </div>
+                        <div className="font-mono text-[0.55rem] text-slate-400 truncate max-w-[180px]" title={u.device_id}>
+                          id: {u.device_id?.slice(0, 16)}...
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-[0.7rem] italic">Sin vincular</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    {u.device_id && canModify && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => unbindDevice(u)}
+                        className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                        title="Desvincular dispositivo"
+                        data-testid="unbind-device-button"
+                      >
+                        <Unlock className="w-4 h-4" strokeWidth={1.8} />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
                       disabled={!canModify}
                       title={isSelf ? "No puedes editarte a ti mismo" : !canModify ? "Sin permiso" : "Editar"}
                       onClick={() => canModify && openEdit(u)}
-                      className="text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                      className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
                       data-testid="edit-user-button"
                     >
                       <Pencil className="w-4 h-4" strokeWidth={1.8} />
@@ -240,8 +347,8 @@ export default function Users() {
                 </TableRow>
                 );
               })}
-              {users.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-slate-400 py-8 text-center">Sin usuarios</TableCell></TableRow>
+              {filteredUsers.length === 0 && (
+                <TableRow><TableCell colSpan={6} className="text-slate-400 py-8 text-center">Sin usuarios con estos filtros</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -260,13 +367,44 @@ export default function Users() {
           </DialogHeader>
           <form onSubmit={save} className="space-y-4">
             <div>
-              <Label className="overline block mb-1.5">Nombre</Label>
+              <Label className="overline block mb-1.5">Nombre (display)</Label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
                 className="bg-white border-slate-200 rounded-md"
                 data-testid="user-name-input"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="overline block mb-1.5">Nombre</Label>
+                <Input
+                  value={form.first_name || ""}
+                  onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                  className="bg-white border-slate-200 rounded-md"
+                  data-testid="user-first-name-input"
+                />
+              </div>
+              <div>
+                <Label className="overline block mb-1.5">Apellido</Label>
+                <Input
+                  value={form.last_name || ""}
+                  onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                  className="bg-white border-slate-200 rounded-md"
+                  data-testid="user-last-name-input"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="overline block mb-1.5">Teléfono</Label>
+              <Input
+                type="tel"
+                value={form.phone || ""}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="+595 9XX XXX XXX"
+                className="bg-white border-slate-200 rounded-md"
+                data-testid="user-phone-input"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">

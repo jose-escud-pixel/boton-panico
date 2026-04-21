@@ -49,6 +49,9 @@ class UserCreate(BaseModel):
     password: str
     name: str
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
     role: UserRole = "client"
     organization_id: str
     permissions: Permissions = Field(default_factory=Permissions)
@@ -61,6 +64,9 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
     role: Optional[UserRole] = None
     organization_id: Optional[str] = None
     permissions: Optional[Permissions] = None
@@ -69,6 +75,23 @@ class UserUpdate(BaseModel):
     access_type: Optional[AccessType] = None
     access_start: Optional[str] = None
     access_end: Optional[str] = None
+    # Device management (super_admin/admin puede desvincular forzando null)
+    device_id: Optional[str] = None
+    device_brand: Optional[str] = None
+    device_model: Optional[str] = None
+    device_platform: Optional[str] = None
+    device_os_version: Optional[str] = None
+    device_app_build: Optional[int] = None
+
+
+class DeviceBind(BaseModel):
+    """Info del dispositivo enviada por Capacitor al primer login exitoso."""
+    device_id: str  # Capacitor Device.identifier
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    platform: Optional[str] = None  # "android" | "ios"
+    os_version: Optional[str] = None
+    app_build: Optional[int] = None
 
 
 class UserPublic(BaseModel):
@@ -77,6 +100,9 @@ class UserPublic(BaseModel):
     email: EmailStr
     name: str
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
     role: UserRole
     organization_id: Optional[str] = None
     permissions: Permissions = Field(default_factory=Permissions)
@@ -85,6 +111,15 @@ class UserPublic(BaseModel):
     access_type: AccessType = "permanent"
     access_start: Optional[str] = None
     access_end: Optional[str] = None
+    # Device info (auto-captured)
+    device_id: Optional[str] = None
+    device_brand: Optional[str] = None
+    device_model: Optional[str] = None
+    device_platform: Optional[str] = None
+    device_os_version: Optional[str] = None
+    device_app_build: Optional[int] = None
+    device_bound_at: Optional[str] = None
+    device_last_seen: Optional[str] = None
 
 
 class LoginRequest(BaseModel):

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
+import { useOrg } from "../../context/OrgContext";
 import ChipFilter from "../../components/ChipFilter";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -64,6 +65,7 @@ function FlyTo({ center }) {
 
 export default function Alerts() {
   const { user } = useAuth();
+  const { activeOrgId, isAll } = useOrg();
   const [alerts, setAlerts] = useState([]);
   const [chips, setChips] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -86,6 +88,10 @@ export default function Alerts() {
       if (statusChip) params.append("status", statusChip.value);
       if (typeChip) params.append("type", typeChip.value);
       if (showArchived) params.append("archived", "true");
+      // super_admin con org específica → filtra; "all" → no filtra
+      if (user?.role === "super_admin" && activeOrgId && !isAll) {
+        params.append("organization_id", activeOrgId);
+      }
       const { data } = await api.get(`/alerts?${params.toString()}`);
       let filtered = data;
       if (userChips.length > 0) {
@@ -113,7 +119,7 @@ export default function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [chips, showArchived]);
+  }, [chips, showArchived, activeOrgId, isAll, user]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -1,6 +1,7 @@
 import axios from "axios";
 import { Capacitor } from "@capacitor/core";
 import { APP_BUILD } from "./appVersion";
+import { getStoredDeviceId } from "./deviceBind";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const BASE_PATH = process.env.REACT_APP_BASE_PATH || "";
@@ -29,6 +30,11 @@ api.interceptors.request.use((config) => {
   // Re-asegurar headers de identificación
   config.headers["X-App-Platform"] = APP_PLATFORM;
   config.headers["X-App-Build"] = String(APP_BUILD);
+  // Device ID — se usa para el lock de dispositivo del cliente
+  const deviceId = getStoredDeviceId();
+  if (deviceId) {
+    config.headers["X-Device-Id"] = deviceId;
+  }
   return config;
 });
 

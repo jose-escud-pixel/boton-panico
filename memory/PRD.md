@@ -166,6 +166,38 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
   - Username vacío en edición → se limpia (null)
   - Retrocompat: `email` sigue funcionando como antes
 
+## Update 2026-04-21 (iteración 12 — Quitar version strict + Device Lock + Fase 5 + Users v2)
+
+### Cambios en backend
+- ✅ **Versión estricta DESHABILITADA**: el login ya no devuelve 426 por mismatch de build. El UpdateBanner sigue funcionando para auto-detectar actualizaciones, pero el usuario puede loguearse igual.
+- ✅ Nuevos campos User: `first_name`, `last_name`, `phone`, `device_id`, `device_brand`, `device_model`, `device_platform`, `device_os_version`, `device_app_build`, `device_bound_at`, `device_last_seen`.
+- ✅ Nuevo modelo `DeviceBind` para el payload de captura.
+- ✅ Nuevo endpoint `POST /api/app/device-bind`: primera vez bindea; subsiguientes, actualiza; device distinto → 423 Locked.
+- ✅ Nuevo endpoint `POST /api/users/{id}/unbind-device`: admin/super_admin desvincula.
+- ✅ Login valida `X-Device-Id` vs `device_id` guardado → 423 Locked si difiere (cliente cambió celular).
+- ✅ `create_user` y `update_user` ahora soportan todos los campos nuevos.
+
+### Frontend (client / APK)
+- ✅ `lib/deviceBind.js`: usa `@capacitor/device` para leer `deviceId`, `manufacturer`, `model`, `platform`, `osVersion`. Persiste en localStorage.
+- ✅ `api.js`: envía `X-Device-Id` en todas las requests automáticamente.
+- ✅ `PanicApp.jsx`: al abrir la app, llama `bindDeviceToBackend()`. Si 423 → logout + toast.
+
+### Frontend (admin)
+- ✅ **Fase 5 — OrgContext + Org Switcher**: super_admin tiene `<select>` en sidebar ("Todas las organizaciones" + cada org). El filtro se aplica en Alerts.jsx (backend query param) y Users.jsx (client-side filter).
+- ✅ **Panel Usuarios v2**:
+  - ChipFilter arriba con sintaxis `role:client status:active access:custom device:yes org:xxx`
+  - Columnas: Nombre (+ apellido + username + badges), Contacto (email + tel), Rol, Organización, Dispositivo (marca + modelo + plataforma + build + device_id corto), Acciones
+  - Botón 🔓 Unbind device (solo si el usuario tiene device vinculado y el admin tiene permiso)
+  - Campos en dialog de edit: Nombre display, Nombre, Apellido, Teléfono (+ los anteriores)
+- ✅ Dark mode aplicado a toda la tabla y chips
+
+### Testing curl
+- Build mismatch → 200 (ya no bloquea) ✅
+- Device bind inicial → OK ✅
+- Login mismo device → OK ✅
+- Login device distinto → 423 ✅
+- Admin unbind → OK → nuevo device funciona ✅
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)

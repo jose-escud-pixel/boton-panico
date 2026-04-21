@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useSocket } from "../../context/SocketContext";
 import { useAlertAudio } from "../../context/AlertAudioContext";
+import { useOrg } from "../../context/OrgContext";
 import VersionBadge from "../../components/VersionBadge";
 
 const navItems = [
@@ -32,6 +33,7 @@ export default function AdminLayout() {
   const { connected } = useSocket();
   const { silence } = useAlertAudio();
   const { isDark, toggleTheme } = useTheme();
+  const { orgs, activeOrgId, selectOrg, canSwitch } = useOrg();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -70,6 +72,24 @@ export default function AdminLayout() {
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
+          {canSwitch && orgs.length > 0 && (
+            <div className="mb-3 px-1">
+              <div className="overline text-[0.55rem] text-slate-500 dark:text-slate-400 mb-1.5 px-2">
+                Organización activa
+              </div>
+              <select
+                value={activeOrgId}
+                onChange={(e) => selectOrg(e.target.value)}
+                className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-md px-2 py-2 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                data-testid="org-switcher"
+              >
+                <option value="all">Todas las organizaciones</option>
+                {orgs.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {navItems.map((item) => (
             <NavLink
               key={item.to}
