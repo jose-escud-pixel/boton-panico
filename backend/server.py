@@ -181,11 +181,39 @@ def strip_sensitive(user_doc: dict) -> dict:
 # AUTH
 # ======================================================
 @api.post("/auth/login")
-async def login(payload: LoginRequest, response: Response):
+async def login(payload: LoginRequest, request: Request, response: Response):
     email = payload.email.lower()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # ------- Controles de acceso de cuenta -------
+    # Estado activo/desactivado
+    if user.get("status") == "disabled":
+        raise HTTPException(status_code=403, detail="Cuenta desactivada. Contactá al administrador.")
+
+    # Ventana de acceso (clients con access_type != permanent)
+    access_type = user.get("access_type", "permanent")
+    if access_type != "permanent":
+        today = datetime.now(timezone.utc).date().isoformat()
+        start = user.get("access_start")
+        end = user.get("access_end")
+        if start and today < start:
+            raise HTTPException(status_code=403, detail=f"Tu acceso comienza el {start}")
+        if end and today > end:
+            raise HTTPException(status_code=403, detail=f"Tu acceso expiró el {end}. Contactá al administrador.")
+
+    # ------- Clientes: solo desde la app nativa -------
+    # El frontend Capacitor envía el header X-App-Platform: native.
+    # Cualquier otro valor (o ausencia) → bloqueado.
+    if user.get("role") == "client":
+        platform_header = request.headers.get("x-app-platform", "").lower()
+        if platform_header != "native":
+            raise HTTPException(
+                status_code=403,
+                detail="Acceso permitido sólo desde la app móvil ÑACURUTU Seguridad. Descargala e ingresá desde allí.",
+            )
+
     access_token = create_access_token(
         user["id"], user["email"], user["role"], user.get("organization_id")
     )
@@ -310,6 +338,10 @@ async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
         "organization_id": payload.organization_id,
         "permissions": payload.permissions.model_dump(),
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": payload.status,
+        "access_type": payload.access_type,
+        "access_start": payload.access_start,
+        "access_end": payload.access_end,
     }
     await db.users.insert_one(dict(doc))
     doc.pop("_id", None)

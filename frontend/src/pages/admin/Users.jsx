@@ -56,6 +56,10 @@ export default function Users() {
       role: "client",
       organization_id: me?.organization_id || "",
       permissions: { create: false, edit: false, delete: false, view: true },
+      status: "active",
+      access_type: "permanent",
+      access_start: "",
+      access_end: "",
     };
   }
 
@@ -90,6 +94,10 @@ export default function Users() {
       role: u.role,
       organization_id: u.organization_id,
       permissions: u.permissions || { create: false, edit: false, delete: false, view: true },
+      status: u.status || "active",
+      access_type: u.access_type || "permanent",
+      access_start: u.access_start || "",
+      access_end: u.access_end || "",
     });
     setOpen(true);
   };
@@ -98,13 +106,22 @@ export default function Users() {
     e.preventDefault();
     setSaving(true);
     try {
+      // Sanear fechas vacías
+      const cleaned = { ...form };
+      if (cleaned.access_type === "permanent") {
+        cleaned.access_start = null;
+        cleaned.access_end = null;
+      } else {
+        if (!cleaned.access_start) cleaned.access_start = null;
+        if (!cleaned.access_end) cleaned.access_end = null;
+      }
       if (editing) {
-        const { id, email, ...patch } = form;
+        const { id, email, ...patch } = cleaned;
         if (!patch.password) delete patch.password;
         await api.put(`/users/${id}`, patch);
         toast.success("Usuario actualizado");
       } else {
-        await api.post("/users", form);
+        await api.post("/users", cleaned);
         toast.success("Usuario creado");
       }
       setOpen(false);
@@ -166,8 +183,21 @@ export default function Users() {
                 return (
                 <TableRow key={u.id} className="border-slate-100 hover:bg-slate-50" data-testid="user-row">
                   <TableCell className="font-heading font-semibold text-slate-900">
-                    {u.name}
-                    {isSelf && <span className="ml-2 text-[0.6rem] text-slate-400 font-mono-tactical">(TÚ)</span>}
+                    <div className="flex items-center gap-2">
+                      {u.status === "disabled" && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.55rem] font-mono bg-slate-200 text-slate-600 uppercase tracking-wider">
+                          desactivado
+                        </span>
+                      )}
+                      {u.access_type && u.access_type !== "permanent" && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.55rem] font-mono bg-amber-100 text-amber-800 uppercase tracking-wider"
+                              title={`${u.access_type}${u.access_start ? ` desde ${u.access_start}` : ""}${u.access_end ? ` hasta ${u.access_end}` : ""}`}>
+                          {u.access_type}
+                        </span>
+                      )}
+                      <span>{u.name}</span>
+                      {isSelf && <span className="text-[0.6rem] text-slate-400 font-mono-tactical">(TÚ)</span>}
+                    </div>
                   </TableCell>
                   <TableCell className="text-slate-600 text-sm">{u.email}</TableCell>
                   <TableCell>
@@ -294,6 +324,67 @@ export default function Users() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-3 mt-2">
+              <Label className="overline block mb-2">Control de acceso</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-slate-600 mb-1 block">Estado</Label>
+                  <Select
+                    value={form.status}
+                    onValueChange={(v) => setForm({ ...form, status: v })}
+                  >
+                    <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-status-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-slate-200">
+                      <SelectItem value="active">Activo</SelectItem>
+                      <SelectItem value="disabled">Desactivado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-600 mb-1 block">Tipo de acceso</Label>
+                  <Select
+                    value={form.access_type}
+                    onValueChange={(v) => setForm({ ...form, access_type: v })}
+                  >
+                    <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-access-type-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-slate-200">
+                      <SelectItem value="permanent">Permanente</SelectItem>
+                      <SelectItem value="annual">Anual</SelectItem>
+                      <SelectItem value="custom">Personalizado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {form.access_type !== "permanent" && (
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <Label className="text-xs text-slate-600 mb-1 block">Desde</Label>
+                    <Input
+                      type="date"
+                      value={form.access_start || ""}
+                      onChange={(e) => setForm({ ...form, access_start: e.target.value })}
+                      className="bg-white border-slate-200 rounded-md"
+                      data-testid="user-access-start-input"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-600 mb-1 block">Hasta</Label>
+                    <Input
+                      type="date"
+                      value={form.access_end || ""}
+                      onChange={(e) => setForm({ ...form, access_end: e.target.value })}
+                      className="bg-white border-slate-200 rounded-md"
+                      data-testid="user-access-end-input"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

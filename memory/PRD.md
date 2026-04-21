@@ -134,6 +134,17 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ Dialog Editar Usuario: Select de rol deshabilitado si es el usuario propio, con label "(No puedes modificar tu propio rol)"
 - ✅ "UTILIDADES" reemplaza "EN CAMINO" también en admin (consistencia con cliente)
 
+## Update 2026-04-21 (iteración 10 — Fase 2: Control de acceso + Clientes solo en app)
+- ✅ **Clientes SOLO desde la app nativa Android**: header `X-App-Platform: native` requerido
+- ✅ Desde web reciben 403 con CTA para descargar APK (botón grande rojo)
+- ✅ Admins/Super_admins pueden ingresar desde cualquier dispositivo (web o app)
+- ✅ Nuevos campos user: `status` (active/disabled), `access_type` (permanent/annual/custom), `access_start`, `access_end`
+- ✅ Login endpoint valida: status + ventana de fechas → 403 con mensaje explicativo ("Cuenta desactivada", "Tu acceso expiró el YYYY-MM-DD")
+- ✅ UI Admin Users form: nuevo bloque "Control de acceso" con Estado, Tipo de acceso, Desde/Hasta (se muestran solo si Tipo ≠ Permanente)
+- ✅ Badges en tabla de usuarios: DESACTIVADO (gris) y tipo de acceso no-permanente (ámbar con tooltip de fechas)
+- ✅ `api.js` setea `X-App-Platform` automáticamente en todas las requests usando `Capacitor.isNativePlatform()`
+- ✅ Login.jsx detecta el 403 específico y muestra banner con botón "Descargar App Android"
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)

@@ -33,6 +33,8 @@ class Organization(OrganizationBase):
 
 # ---------- Users ----------
 UserRole = Literal["super_admin", "admin", "client"]
+UserStatus = Literal["active", "disabled"]
+AccessType = Literal["permanent", "annual", "custom"]
 
 
 class Permissions(BaseModel):
@@ -49,6 +51,10 @@ class UserCreate(BaseModel):
     role: UserRole = "client"
     organization_id: str
     permissions: Permissions = Field(default_factory=Permissions)
+    status: UserStatus = "active"
+    access_type: AccessType = "permanent"
+    access_start: Optional[str] = None  # ISO date "2026-01-01"
+    access_end: Optional[str] = None    # ISO date "2026-12-31"
 
 
 class UserUpdate(BaseModel):
@@ -57,6 +63,10 @@ class UserUpdate(BaseModel):
     organization_id: Optional[str] = None
     permissions: Optional[Permissions] = None
     password: Optional[str] = None
+    status: Optional[UserStatus] = None
+    access_type: Optional[AccessType] = None
+    access_start: Optional[str] = None
+    access_end: Optional[str] = None
 
 
 class UserPublic(BaseModel):
@@ -68,6 +78,10 @@ class UserPublic(BaseModel):
     organization_id: Optional[str] = None
     permissions: Permissions = Field(default_factory=Permissions)
     created_at: str
+    status: UserStatus = "active"
+    access_type: AccessType = "permanent"
+    access_start: Optional[str] = None
+    access_end: Optional[str] = None
 
 
 class LoginRequest(BaseModel):

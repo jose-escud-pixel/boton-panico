@@ -19,6 +19,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [clientFromWeb, setClientFromWeb] = useState(false);
 
   if (user && user !== false) {
     if (user.role === "client") return <Navigate to="/client" replace />;
@@ -28,13 +29,23 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setClientFromWeb(false);
     setLoading(true);
     try {
       const u = await login(email, password);
       if (u.role === "client") navigate("/client");
       else navigate("/admin/dashboard");
     } catch (err) {
-      setError(formatApiError(err.response?.data?.detail) || err.message);
+      const detail = formatApiError(err.response?.data?.detail) || err.message;
+      // Detectar el 403 específico de cliente-desde-web
+      if (
+        err.response?.status === 403 &&
+        typeof detail === "string" &&
+        detail.toLowerCase().includes("app móvil")
+      ) {
+        setClientFromWeb(true);
+      }
+      setError(detail);
     } finally {
       setLoading(false);
     }
@@ -103,7 +114,33 @@ export default function Login() {
               />
             </div>
 
-            {error && (
+            {clientFromWeb ? (
+              <div
+                className="space-y-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-4"
+                data-testid="client-from-web-block"
+              >
+                <div className="flex items-start gap-2">
+                  <Smartphone className="w-5 h-5 mt-0.5 flex-shrink-0 text-rose-600" strokeWidth={1.8} />
+                  <div>
+                    <div className="font-semibold mb-1">Sólo desde la app móvil</div>
+                    <div className="text-rose-700/90 text-xs leading-relaxed">
+                      Por seguridad, los clientes sólo pueden ingresar desde la
+                      aplicación oficial ÑACURUTU Seguridad para Android.
+                      Los administradores pueden ingresar desde cualquier dispositivo.
+                    </div>
+                  </div>
+                </div>
+                <a
+                  href={APK_URL}
+                  download
+                  className="flex items-center justify-center gap-2 w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2.5 rounded-md transition-colors"
+                  data-testid="login-download-apk-cta"
+                >
+                  <Download className="w-4 h-4" strokeWidth={2} />
+                  Descargar App Android
+                </a>
+              </div>
+            ) : error && (
               <div
                 className="flex items-start gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3"
                 data-testid="login-error"
