@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Download, X, Sparkles } from "lucide-react";
 import { APP_VERSION, APP_BUILD, APK_URL, fetchRemoteVersion } from "../lib/appVersion";
 import { isNative } from "../lib/nativePush";
+import { openApkDownload } from "../lib/apkDownload";
 
 /**
  * Banner que detecta si hay una nueva versión de la APK disponible.
@@ -32,17 +33,8 @@ export default function UpdateBanner() {
   if (!isNative() || !remote || dismissed) return null;
 
   const apkUrl = remote.apk_url || APK_URL;
-  const absoluteUrl = apkUrl.startsWith("http")
-    ? apkUrl
-    : `https://www.aranduinformatica.net${apkUrl}`;
 
-  const handleUpdate = () => {
-    try {
-      window.open(absoluteUrl, "_system");
-    } catch {
-      window.location.href = absoluteUrl;
-    }
-  };
+  const handleUpdate = () => openApkDownload(apkUrl);
 
   const displayVersion = remote.version || `build ${remote.versionCode}`;
   const currentLabel = `actual: ${APP_VERSION} (build ${APP_BUILD})`;

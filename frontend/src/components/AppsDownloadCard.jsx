@@ -1,5 +1,6 @@
 import React from "react";
 import { Smartphone, Download, ShieldCheck, Siren } from "lucide-react";
+import { openApkDownload } from "../lib/apkDownload";
 
 /**
  * Card con enlaces de descarga para las dos APKs.
@@ -31,10 +32,10 @@ function ApkRow({ kind }) {
   const cfg = APKS[kind];
   const { Icon } = cfg;
   return (
-    <a
-      href={cfg.url}
-      download
-      className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-700 bg-white dark:bg-slate-800/60 transition-all hover:shadow-md group"
+    <button
+      type="button"
+      onClick={() => openApkDownload(cfg.url)}
+      className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-700 bg-white dark:bg-slate-800/60 transition-all hover:shadow-md group text-left"
       data-testid={cfg.testid}
     >
       <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${cfg.gradient} flex items-center justify-center flex-shrink-0 shadow-sm`}>
@@ -54,7 +55,7 @@ function ApkRow({ kind }) {
         </div>
       </div>
       <Download className="w-5 h-5 text-slate-400 group-hover:text-rose-600 transition-colors flex-shrink-0" strokeWidth={2} />
-    </a>
+    </button>
   );
 }
 

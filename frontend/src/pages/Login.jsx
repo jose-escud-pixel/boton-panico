@@ -9,6 +9,7 @@ import { OwlLogo } from "../components/OwlLogo";
 import { Loader2, ShieldAlert, Download, Smartphone } from "lucide-react";
 import { isNative } from "../lib/nativePush";
 import { IS_ADMIN_BUILD } from "../lib/buildMode";
+import { openApkDownload } from "../lib/apkDownload";
 import VersionBadge from "../components/VersionBadge";
 
 const APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
@@ -137,15 +138,15 @@ export default function Login() {
                     <div className="text-amber-800/90 text-xs leading-relaxed">{error}</div>
                   </div>
                 </div>
-                <a
-                  href={APK_URL}
-                  download
+                <button
+                  type="button"
+                  onClick={() => openApkDownload(APK_URL)}
                   className="flex items-center justify-center gap-2 w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-2.5 rounded-md transition-colors"
                   data-testid="login-update-apk-cta"
                 >
                   <Download className="w-4 h-4" strokeWidth={2} />
                   Descargar nueva versión
-                </a>
+                </button>
               </div>
             ) : clientFromWeb ? (
               <div
@@ -163,15 +164,15 @@ export default function Login() {
                     </div>
                   </div>
                 </div>
-                <a
-                  href={APK_URL}
-                  download
+                <button
+                  type="button"
+                  onClick={() => openApkDownload(APK_URL)}
                   className="flex items-center justify-center gap-2 w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2.5 rounded-md transition-colors"
                   data-testid="login-download-apk-cta"
                 >
                   <Download className="w-4 h-4" strokeWidth={2} />
                   Descargar App Android
-                </a>
+                </button>
               </div>
             ) : error && (
               <div
@@ -204,10 +205,10 @@ export default function Login() {
         {/* Android App Download — mostrar SIEMPRE excepto dentro de la APK cliente
             (en la APK admin sí lo mostramos para que el admin pueda pasar el link a clientes) */}
         {(!isNative() || IS_ADMIN_BUILD) && (
-          <a
-            href={APK_URL}
-            download
-            className="mt-5 flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-rose-300 hover:shadow-md transition-all duration-150 group"
+          <button
+            type="button"
+            onClick={() => openApkDownload(APK_URL)}
+            className="mt-5 w-full flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-rose-300 hover:shadow-md transition-all duration-150 group text-left"
             data-testid="download-android-app-button"
           >
             <div className="flex items-center gap-3">
@@ -227,7 +228,7 @@ export default function Login() {
               className="w-5 h-5 text-slate-400 group-hover:text-rose-600 transition-colors flex-shrink-0"
               strokeWidth={1.8}
             />
-          </a>
+          </button>
         )}
 
         <p className="text-center text-slate-400 text-xs mt-6 font-mono-tactical">
