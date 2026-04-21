@@ -201,8 +201,9 @@ export default function Login() {
           </form>
         </div>
 
-        {/* Android App Download — oculto en la propia app nativa */}
-        {!isNative() && !IS_ADMIN_BUILD && (
+        {/* Android App Download — mostrar SIEMPRE excepto dentro de la APK cliente
+            (en la APK admin sí lo mostramos para que el admin pueda pasar el link a clientes) */}
+        {(!isNative() || IS_ADMIN_BUILD) && (
           <a
             href={APK_URL}
             download
