@@ -177,13 +177,64 @@ def strip_sensitive(user_doc: dict) -> dict:
     return user_doc
 
 
+# Cache de la versión requerida. Se invalida cada 30s para que un re-deploy
+# sea detectado sin reiniciar el backend.
+_version_cache = {"build": None, "ts": 0}
+
+
+def _get_required_app_build() -> Optional[int]:
+    """Lee el versionCode requerido desde version.json generado por
+    build-android-apk.sh. Path configurable via env VERSION_JSON_PATH.
+    Si el archivo no existe (dev/preview) retorna None → no se valida.
+    """
+    import json
+    import os
+    import time
+    now = time.time()
+    if now - _version_cache["ts"] < 30 and _version_cache["build"] is not None:
+        return _version_cache["build"]
+    path = os.environ.get("VERSION_JSON_PATH", "/var/www/boton-panico/downloads/version.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        build = int(data.get("versionCode", 0))
+        if build > 0:
+            _version_cache["build"] = build
+            _version_cache["ts"] = now
+            return build
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, OSError):
+        return None
+    return None
+
+
+@api.get("/app/version")
+async def app_version():
+    """Endpoint público para que la app consulte la versión requerida.
+    Útil para diagnóstico y para forzar chequeos desde el cliente.
+    """
+    build = _get_required_app_build()
+    return {"versionCode": build, "enforced": build is not None}
+
+
 # ======================================================
 # AUTH
 # ======================================================
 @api.post("/auth/login")
 async def login(payload: LoginRequest, request: Request, response: Response):
-    email = payload.email.lower()
-    user = await db.users.find_one({"email": email})
+    # Acepta "identifier" (nuevo) o "email" (legacy). Busca en orden:
+    # 1) username exacto (case-insensitive), 2) email exacto
+    raw_id = (payload.identifier or payload.email or "").strip()
+    if not raw_id:
+        raise HTTPException(status_code=400, detail="Identificador requerido")
+    identifier = raw_id.lower()
+
+    user = None
+    # Primero probamos username (no tiene '@')
+    if "@" not in identifier:
+        user = await db.users.find_one({"username": identifier})
+    if not user:
+        # Luego email exacto
+        user = await db.users.find_one({"email": identifier})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -213,6 +264,25 @@ async def login(payload: LoginRequest, request: Request, response: Response):
                 status_code=403,
                 detail="Acceso permitido sólo desde la app móvil ÑACURUTU Seguridad. Descargala e ingresá desde allí.",
             )
+
+        # ------- Versión estricta de la APK -------
+        # Lee el versionCode requerido desde version.json publicado por el
+        # script build-android-apk.sh. Si no coincide exactamente con el
+        # X-App-Build del header, se bloquea el login forzando actualizar.
+        required_build = _get_required_app_build()
+        if required_build is not None:
+            try:
+                app_build = int(request.headers.get("x-app-build", "0"))
+            except (TypeError, ValueError):
+                app_build = 0
+            if app_build != required_build:
+                raise HTTPException(
+                    status_code=426,  # Upgrade Required
+                    detail=(
+                        f"Versión desactualizada (build {app_build}). "
+                        f"Actualizá la app a la versión más reciente (build {required_build}) para continuar."
+                    ),
+                )
 
     access_token = create_access_token(
         user["id"], user["email"], user["role"], user.get("organization_id")
@@ -324,6 +394,12 @@ async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
     email = payload.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already in use")
+    # Validar username único si se proporciona
+    username = None
+    if payload.username:
+        username = payload.username.strip().lower()
+        if username and await db.users.find_one({"username": username}):
+            raise HTTPException(status_code=400, detail="Nombre de usuario ya existe")
     if user["role"] == "admin" and payload.organization_id != user.get("organization_id"):
         raise HTTPException(status_code=403, detail="Cannot assign to another org")
     # Only super_admin can create super_admin or admin
@@ -332,6 +408,7 @@ async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
     doc = {
         "id": str(uuid.uuid4()),
         "email": email,
+        "username": username,
         "password_hash": hash_password(payload.password),
         "name": payload.name,
         "role": payload.role,
@@ -390,6 +467,14 @@ async def update_user(user_id: str, payload: UserUpdate, user: dict = Depends(re
         update["password_hash"] = hash_password(data.pop("password"))
     if "permissions" in data and data["permissions"] is not None:
         update["permissions"] = data.pop("permissions")
+    # Validar unicidad del username si cambia
+    if "username" in data and data["username"] is not None:
+        new_username = data["username"].strip().lower() if data["username"] else None
+        if new_username:
+            conflict = await db.users.find_one({"username": new_username, "id": {"$ne": user_id}})
+            if conflict:
+                raise HTTPException(status_code=400, detail="Nombre de usuario ya existe")
+        data["username"] = new_username
     for k, v in data.items():
         if v is not None:
             update[k] = v

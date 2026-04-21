@@ -48,6 +48,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
+    username: Optional[str] = None
     role: UserRole = "client"
     organization_id: str
     permissions: Permissions = Field(default_factory=Permissions)
@@ -59,6 +60,7 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
+    username: Optional[str] = None
     role: Optional[UserRole] = None
     organization_id: Optional[str] = None
     permissions: Optional[Permissions] = None
@@ -74,6 +76,7 @@ class UserPublic(BaseModel):
     id: str
     email: EmailStr
     name: str
+    username: Optional[str] = None
     role: UserRole
     organization_id: Optional[str] = None
     permissions: Permissions = Field(default_factory=Permissions)
@@ -85,7 +88,10 @@ class UserPublic(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # "identifier" acepta username o email. Se mantiene "email" como
+    # alias legacy para no romper clientes viejos.
+    identifier: Optional[str] = None
+    email: Optional[str] = None
     password: str
 
 

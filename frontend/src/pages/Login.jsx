@@ -20,6 +20,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [clientFromWeb, setClientFromWeb] = useState(false);
+  const [versionMismatch, setVersionMismatch] = useState(false);
 
   if (user && user !== false) {
     if (user.role === "client") return <Navigate to="/client" replace />;
@@ -30,6 +31,7 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setClientFromWeb(false);
+    setVersionMismatch(false);
     setLoading(true);
     try {
       const u = await login(email, password);
@@ -37,9 +39,12 @@ export default function Login() {
       else navigate("/admin/dashboard");
     } catch (err) {
       const detail = formatApiError(err.response?.data?.detail) || err.message;
-      // Detectar el 403 específico de cliente-desde-web
-      if (
-        err.response?.status === 403 &&
+      const status = err.response?.status;
+      // 426 Upgrade Required
+      if (status === 426) {
+        setVersionMismatch(true);
+      } else if (
+        status === 403 &&
         typeof detail === "string" &&
         detail.toLowerCase().includes("app móvil")
       ) {
@@ -86,15 +91,15 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <Label htmlFor="email" className="overline block mb-2">Correo</Label>
+              <Label htmlFor="identifier" className="overline block mb-2">Usuario o correo</Label>
               <Input
-                id="email"
-                type="email"
+                id="identifier"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@correo.com"
+                placeholder="usuario o tu@correo.com"
                 required
-                autoComplete="email"
+                autoComplete="username"
                 className="bg-slate-50 border-slate-200 h-11 rounded-md focus-visible:ring-rose-600 focus-visible:ring-offset-0"
                 data-testid="login-email-input"
               />
@@ -114,7 +119,29 @@ export default function Login() {
               />
             </div>
 
-            {clientFromWeb ? (
+            {versionMismatch ? (
+              <div
+                className="space-y-3 text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded-md p-4"
+                data-testid="version-mismatch-block"
+              >
+                <div className="flex items-start gap-2">
+                  <Download className="w-5 h-5 mt-0.5 flex-shrink-0 text-amber-700" strokeWidth={1.8} />
+                  <div>
+                    <div className="font-semibold mb-1">Actualizá tu app</div>
+                    <div className="text-amber-800/90 text-xs leading-relaxed">{error}</div>
+                  </div>
+                </div>
+                <a
+                  href={APK_URL}
+                  download
+                  className="flex items-center justify-center gap-2 w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-2.5 rounded-md transition-colors"
+                  data-testid="login-update-apk-cta"
+                >
+                  <Download className="w-4 h-4" strokeWidth={2} />
+                  Descargar nueva versión
+                </a>
+              </div>
+            ) : clientFromWeb ? (
               <div
                 className="space-y-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-4"
                 data-testid="client-from-web-block"

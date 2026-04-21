@@ -51,6 +51,7 @@ export default function Users() {
     return {
       id: null,
       email: "",
+      username: "",
       password: "",
       name: "",
       role: "client",
@@ -89,6 +90,7 @@ export default function Users() {
     setForm({
       id: u.id,
       email: u.email,
+      username: u.username || "",
       password: "",
       name: u.name,
       role: u.role,
@@ -114,6 +116,13 @@ export default function Users() {
       } else {
         if (!cleaned.access_start) cleaned.access_start = null;
         if (!cleaned.access_end) cleaned.access_end = null;
+      }
+      // Username vacío → no se envía (o se envía null para editar y limpiar)
+      if (!cleaned.username) {
+        if (editing) cleaned.username = null;
+        else delete cleaned.username;
+      } else {
+        cleaned.username = cleaned.username.trim().toLowerCase();
       }
       if (editing) {
         const { id, email, ...patch } = cleaned;
@@ -260,17 +269,33 @@ export default function Users() {
                 data-testid="user-name-input"
               />
             </div>
-            <div>
-              <Label className="overline block mb-1.5">Email</Label>
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                required
-                disabled={!!editing}
-                className="bg-white border-slate-200 rounded-md"
-                data-testid="user-email-input"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="overline block mb-1.5">Email</Label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                  disabled={!!editing}
+                  className="bg-white border-slate-200 rounded-md"
+                  data-testid="user-email-input"
+                />
+              </div>
+              <div>
+                <Label className="overline block mb-1.5">
+                  Usuario <span className="normal-case text-[0.6rem] text-slate-400">(opcional)</span>
+                </Label>
+                <Input
+                  type="text"
+                  value={form.username || ""}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  placeholder="ej: jperez"
+                  autoComplete="off"
+                  className="bg-white border-slate-200 rounded-md"
+                  data-testid="user-username-input"
+                />
+              </div>
             </div>
             <div>
               <Label className="overline block mb-1.5">

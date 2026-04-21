@@ -145,6 +145,27 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ `api.js` setea `X-App-Platform` automáticamente en todas las requests usando `Capacitor.isNativePlatform()`
 - ✅ Login.jsx detecta el 403 específico y muestra banner con botón "Descargar App Android"
 
+## Update 2026-04-21 (iteración 11 — Strict Version + Fase 3 Chips + Fase 4 Username)
+- ✅ **Versión estricta del APK**: backend valida `X-App-Build` contra `versionCode` de `version.json`. Si difiere → 426 Upgrade Required con mensaje "Versión desactualizada". El `UpdateBanner` sigue funcionando para auto-detección de nuevas versiones.
+- ✅ `_get_required_app_build()` con cache 30s para performance. Lee desde `VERSION_JSON_PATH` (default `/var/www/boton-panico/downloads/version.json`). Si no existe → skip (dev mode).
+- ✅ Endpoint público `GET /api/app/version` para consultar requisito.
+- ✅ `api.js` envía `X-App-Build` en TODAS las requests desde `APP_BUILD` constant.
+- ✅ Login.jsx detecta 426 y muestra banner ámbar con botón "Descargar nueva versión".
+- ✅ **Fase 3 — Búsqueda por chips**: Nuevo componente `ChipFilter` reemplaza filtros en /admin/alerts.
+  - Sintaxis: `status:pending`, `type:panic`, `user:jose`, `org:ñacurutu`, texto libre
+  - Enter → crea chip, Backspace vacío → borra último, X → quita uno
+  - Colores por tipo de chip, botón Info con ayuda inline
+  - Chips se muestran como badges coloreados dentro del input
+  - Múltiples chips combinan como AND
+- ✅ **Fase 4 — Username login**: Campo `username` opcional y único en users.
+  - `LoginRequest` acepta `identifier` (username o email) o `email` (legacy)
+  - Backend busca por username primero (si no tiene `@`), luego email
+  - UI Login: label "Usuario o correo", input type="text"
+  - UI Users form: campo Usuario al lado del Email con placeholder "ej: jperez"
+  - Validación de unicidad en create + update
+  - Username vacío en edición → se limpia (null)
+  - Retrocompat: `email` sigue funcionando como antes
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)

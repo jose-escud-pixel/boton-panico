@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Capacitor } from "@capacitor/core";
+import { APP_BUILD } from "./appVersion";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const BASE_PATH = process.env.REACT_APP_BASE_PATH || "";
@@ -15,6 +16,7 @@ const api = axios.create({
   withCredentials: true,
   headers: {
     "X-App-Platform": APP_PLATFORM,
+    "X-App-Build": String(APP_BUILD),
   },
 });
 
@@ -24,8 +26,9 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  // Re-asegurar el header (para instancias que se clonan en upload, etc.)
+  // Re-asegurar headers de identificación
   config.headers["X-App-Platform"] = APP_PLATFORM;
+  config.headers["X-App-Build"] = String(APP_BUILD);
   return config;
 });
 

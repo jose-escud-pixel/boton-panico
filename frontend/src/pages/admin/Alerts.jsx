@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
+import ChipFilter from "../../components/ChipFilter";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -64,9 +65,7 @@ function FlyTo({ center }) {
 export default function Alerts() {
   const { user } = useAuth();
   const [alerts, setAlerts] = useState([]);
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [filterType, setFilterType] = useState("all");
-  const [filterUser, setFilterUser] = useState("");
+  const [chips, setChips] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -77,18 +76,35 @@ export default function Alerts() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Extrae valores de chips para query y filtrado cliente
+      const statusChip = chips.find((c) => c.key === "status");
+      const typeChip = chips.find((c) => c.key === "type");
+      const userChips = chips.filter((c) => c.key === "user" || c.key === "text");
+      const orgChips = chips.filter((c) => c.key === "org");
+
       const params = new URLSearchParams();
-      if (filterStatus !== "all") params.append("status", filterStatus);
-      if (filterType !== "all") params.append("type", filterType);
+      if (statusChip) params.append("status", statusChip.value);
+      if (typeChip) params.append("type", typeChip.value);
       if (showArchived) params.append("archived", "true");
       const { data } = await api.get(`/alerts?${params.toString()}`);
       let filtered = data;
-      if (filterUser.trim()) {
-        const q = filterUser.toLowerCase();
-        filtered = filtered.filter(
-          (a) =>
-            (a.user_name && a.user_name.toLowerCase().includes(q)) ||
-            (a.user_email && a.user_email.toLowerCase().includes(q))
+      if (userChips.length > 0) {
+        filtered = filtered.filter((a) =>
+          userChips.every((c) => {
+            const q = c.value.toLowerCase();
+            return (
+              (a.user_name && a.user_name.toLowerCase().includes(q)) ||
+              (a.user_email && a.user_email.toLowerCase().includes(q))
+            );
+          })
+        );
+      }
+      if (orgChips.length > 0) {
+        filtered = filtered.filter((a) =>
+          orgChips.every((c) => {
+            const q = c.value.toLowerCase();
+            return a.organization_name && a.organization_name.toLowerCase().includes(q);
+          })
         );
       }
       setAlerts(filtered);
@@ -97,7 +113,7 @@ export default function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterType, filterUser, showArchived]);
+  }, [chips, showArchived]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -194,49 +210,15 @@ export default function Alerts() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        <div>
-          <Label className="overline block mb-1.5">Estado</Label>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="filter-status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-white border-slate-200">
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="pending">Pendientes</SelectItem>
-              <SelectItem value="in_process">En proceso</SelectItem>
-              <SelectItem value="completed">Completadas</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="overline block mb-1.5">Tipo</Label>
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="filter-type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-white border-slate-200">
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="panic">Pánico</SelectItem>
-              <SelectItem value="fire">Incendio</SelectItem>
-              <SelectItem value="medical">Asistencia</SelectItem>
-              <SelectItem value="on_way">Utilidades</SelectItem>
-              <SelectItem value="here">Estoy aquí</SelectItem>
-              <SelectItem value="silent">Silenciosa (legacy)</SelectItem>
-              <SelectItem value="normal">Normal (legacy)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="overline block mb-1.5">Buscar usuario</Label>
-          <Input
-            value={filterUser}
-            onChange={(e) => setFilterUser(e.target.value)}
-            placeholder="nombre o email"
-            className="bg-white border-slate-200 rounded-md"
-            data-testid="filter-user"
-          />
-        </div>
+      <div className="mb-4">
+        <ChipFilter
+          chips={chips}
+          onChange={setChips}
+          suggestions={{
+            status: ["pending", "in_process", "completed"],
+            type: ["panic", "fire", "medical", "on_way", "here"],
+          }}
+        />
       </div>
 
       {/* Map */}
