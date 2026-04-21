@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { OwlLogo } from "../components/OwlLogo";
 import { Loader2, ShieldAlert, Download, Smartphone } from "lucide-react";
 import { isNative } from "../lib/nativePush";
+import { IS_ADMIN_BUILD } from "../lib/buildMode";
 import VersionBadge from "../components/VersionBadge";
 
 const APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
@@ -35,6 +36,11 @@ export default function Login() {
     setLoading(true);
     try {
       const u = await login(email, password);
+      // Si este es el build de la APK admin y el usuario es cliente → bloqueo
+      if (IS_ADMIN_BUILD && u.role === "client") {
+        setError("Esta es la app de administrador. Instalá 'ÑACURUTU Seguridad' si sos cliente.");
+        return;
+      }
       if (u.role === "client") navigate("/client");
       else navigate("/admin/dashboard");
     } catch (err) {
@@ -196,7 +202,7 @@ export default function Login() {
         </div>
 
         {/* Android App Download — oculto en la propia app nativa */}
-        {!isNative() && (
+        {!isNative() && !IS_ADMIN_BUILD && (
           <a
             href={APK_URL}
             download

@@ -1,13 +1,22 @@
 #!/bin/bash
 # ============================================================
 # ÑACURUTU SEGURIDAD — Script de construcción de APK Android
-# Genera: /var/www/boton-panico/frontend/android/app/build/outputs/apk/debug/app-debug.apk
 # ============================================================
 # Uso:
-#   sudo bash /var/www/boton-panico/deploy/build-android-apk.sh
+#   sudo bash deploy/build-android-apk.sh           # APK Cliente (default)
+#   sudo bash deploy/build-android-apk.sh --admin   # APK Admin
 # ============================================================
 
 set -e
+
+# ---------- Parseo de argumentos ----------
+BUILD_MODE="client"
+for arg in "$@"; do
+    case "$arg" in
+        --admin) BUILD_MODE="admin" ;;
+        --client) BUILD_MODE="client" ;;
+    esac
+done
 
 # ---------- Configuración ----------
 PROJECT_ROOT="/var/www/boton-panico"
@@ -16,14 +25,32 @@ ANDROID_DIR="$FRONTEND_DIR/android"
 GOOGLE_SERVICES_SRC="$FRONTEND_DIR/google-services.json"   # debe existir acá
 APK_OUT_DIR="/root/apks"
 
+# Si es admin, cambia el config de Capacitor y el sufijo de archivos
+if [ "$BUILD_MODE" = "admin" ]; then
+    CAPACITOR_CONFIG="$FRONTEND_DIR/capacitor.admin.config.json"
+    APK_FILENAME="nacurutu-admin-latest.apk"
+    VERSION_JSON_FILENAME="version-admin.json"
+    VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code-admin"
+    APP_DISPLAY_NAME="ÑACURUTU Seguridad Admin"
+else
+    CAPACITOR_CONFIG="$FRONTEND_DIR/capacitor.config.json"
+    APK_FILENAME="nacurutu-latest.apk"
+    VERSION_JSON_FILENAME="version.json"
+    VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
+    APP_DISPLAY_NAME="ÑACURUTU Seguridad"
+fi
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m'
 
 log() { echo -e "${GREEN}==>${NC} $*"; }
 warn() { echo -e "${YELLOW}!!!${NC} $*"; }
 err() { echo -e "${RED}ERROR:${NC} $*" >&2; }
+
+log "${BLUE}BUILD MODE: $BUILD_MODE${NC}  →  $APP_DISPLAY_NAME"
 
 # ---------- Paso 1: Verificar dependencias del sistema ----------
 log "Paso 1 — Verificando herramientas..."
@@ -83,7 +110,7 @@ log "Paso 3 — google-services.json OK"
 # ---------- Paso 3b: Auto-increment versionCode + sync APP_BUILD en el bundle JS ----------
 # IMPORTANTE: debe correr ANTES de yarn build para que el bundle embebido
 # tenga el APP_BUILD correcto (el que luego se comparará contra version.json).
-VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
+# VERSION_CODE_FILE ya se definió arriba según BUILD_MODE.
 if [ ! -f "$VERSION_CODE_FILE" ]; then
     echo "1" > "$VERSION_CODE_FILE"
 fi
@@ -109,7 +136,21 @@ fi
 log "Paso 4 — Compilando frontend React..."
 cd "$FRONTEND_DIR"
 yarn install
-yarn build
+# ---------- Paso 4: Build del frontend React ----------
+log "Paso 4 — Compilando frontend React (mode=$BUILD_MODE)..."
+cd "$FRONTEND_DIR"
+yarn install
+
+# Copiar el config de Capacitor correcto según el modo a la ubicación estándar
+# que yarn cap espera (capacitor.config.json en la raíz del frontend).
+# Hacemos backup del original antes.
+if [ "$BUILD_MODE" = "admin" ]; then
+    cp "$FRONTEND_DIR/capacitor.config.json" "$FRONTEND_DIR/capacitor.config.json.backup" 2>/dev/null || true
+    cp "$FRONTEND_DIR/capacitor.admin.config.json" "$FRONTEND_DIR/capacitor.config.json"
+    log "   → capacitor.config.json sobrescrito con versión admin"
+fi
+
+REACT_APP_BUILD_MODE=$BUILD_MODE yarn build
 
 # ---------- Paso 5: Generar el proyecto Android con Capacitor (si no existe) ----------
 if [ ! -d "$ANDROID_DIR" ]; then
@@ -247,49 +288,59 @@ if [ ! -f "$APK_BUILT" ]; then
 fi
 
 mkdir -p "$APK_OUT_DIR"
-APK_OUT="$APK_OUT_DIR/nacurutu-seguridad-$(date +%Y%m%d-%H%M).apk"
+APK_OUT="$APK_OUT_DIR/${BUILD_MODE}-$(date +%Y%m%d-%H%M).apk"
 cp "$APK_BUILT" "$APK_OUT"
 SIZE=$(du -h "$APK_OUT" | cut -f1)
 
 # ---------- Paso 9: Publicar en Apache (/var/www/boton-panico/downloads) ----------
 DOWNLOADS_DIR="$PROJECT_ROOT/downloads"
 mkdir -p "$DOWNLOADS_DIR"
-cp "$APK_BUILT" "$DOWNLOADS_DIR/nacurutu-latest.apk"
-chmod 644 "$DOWNLOADS_DIR/nacurutu-latest.apk"
+cp "$APK_BUILT" "$DOWNLOADS_DIR/$APK_FILENAME"
+chmod 644 "$DOWNLOADS_DIR/$APK_FILENAME"
 
 # Leer APP_VERSION desde el código fuente del frontend
 APP_VERSION=$(grep -E "APP_VERSION\s*=" "$FRONTEND_DIR/src/lib/appVersion.js" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
 APP_VERSION="${APP_VERSION:-1.0.0}"
 
-# Generar version.json para el banner de actualización
-cat > "$DOWNLOADS_DIR/version.json" <<EOF
+# Generar version.json (o version-admin.json)
+cat > "$DOWNLOADS_DIR/$VERSION_JSON_FILENAME" <<EOF
 {
   "version": "$APP_VERSION",
   "versionCode": $NEW_CODE,
-  "apk_url": "/boton-panico/downloads/nacurutu-latest.apk",
+  "apk_url": "/boton-panico/downloads/$APK_FILENAME",
+  "build_mode": "$BUILD_MODE",
   "changelog": "Build $(date '+%Y-%m-%d %H:%M')",
   "build_timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 }
 EOF
-chmod 644 "$DOWNLOADS_DIR/version.json"
+chmod 644 "$DOWNLOADS_DIR/$VERSION_JSON_FILENAME"
+
+# Restaurar capacitor.config.json original si habíamos buildeado admin
+if [ "$BUILD_MODE" = "admin" ] && [ -f "$FRONTEND_DIR/capacitor.config.json.backup" ]; then
+    mv "$FRONTEND_DIR/capacitor.config.json.backup" "$FRONTEND_DIR/capacitor.config.json"
+    log "   → capacitor.config.json restaurado"
+fi
 
 log ""
 log "============================================"
-log "  ✅ APK GENERADA EXITOSAMENTE"
+log "  ✅ APK ${BUILD_MODE^^} GENERADA EXITOSAMENTE"
 log "============================================"
 log "  Archivo: $APK_OUT"
 log "  Tamaño: $SIZE"
 log "  Versión: $APP_VERSION (versionCode: $NEW_CODE)"
 log ""
 log "  📤 Publicado en Apache:"
-log "     $DOWNLOADS_DIR/nacurutu-latest.apk"
-log "     $DOWNLOADS_DIR/version.json"
+log "     $DOWNLOADS_DIR/$APK_FILENAME"
+log "     $DOWNLOADS_DIR/$VERSION_JSON_FILENAME"
 log ""
 log "  Descarga pública:"
-log "     https://www.aranduinformatica.net/boton-panico/downloads/nacurutu-latest.apk"
+log "     https://www.aranduinformatica.net/boton-panico/downloads/$APK_FILENAME"
 log ""
-log "  Para instalar en tu celular:"
-log "  1) Activá 'Instalar apps de fuentes desconocidas' en Android"
-log "  2) Entrá desde el celular a la URL de descarga pública"
-log "  3) Abrí 'ÑACURUTU Seguridad' → login → permitir notificaciones + ubicación"
+if [ "$BUILD_MODE" = "admin" ]; then
+log "  🛡️ Modo ADMIN — para operadores de ÑACURUTU"
+log "  Para compilar también la APK Cliente: sudo bash deploy/build-android-apk.sh"
+else
+log "  🚨 Modo CLIENTE — para usuarios finales con botón SOS"
+log "  Para compilar también la APK Admin: sudo bash deploy/build-android-apk.sh --admin"
+fi
 log "============================================"

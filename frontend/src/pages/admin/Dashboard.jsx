@@ -14,6 +14,8 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
+import { isNative } from "../../lib/nativePush";
+import AppsDownloadCard from "../../components/AppsDownloadCard";
 
 const STATUS_COLOR = {
   pending: "#e11d48",
@@ -99,6 +101,12 @@ export default function Dashboard() {
         <KpiCard label="Mes" value={stats.month} icon={Clock} accent="blue" testid="kpi-month" />
         <KpiCard label="Total" value={stats.total} icon={CheckCircle2} accent="emerald" testid="kpi-total" />
       </div>
+
+      {!isNative() && (
+        <div className="mb-8">
+          <AppsDownloadCard />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 bg-white border-slate-200 rounded-lg">
