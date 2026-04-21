@@ -324,8 +324,36 @@ async def update_user(user_id: str, payload: UserUpdate, user: dict = Depends(re
         raise HTTPException(status_code=404, detail="User not found")
     if user["role"] == "admin" and target.get("organization_id") != user.get("organization_id"):
         raise HTTPException(status_code=403, detail="Cannot edit user from another org")
-    update = {}
+
+    # Role hierarchy for security checks
+    ROLE_LEVEL = {"super_admin": 3, "admin": 2, "client": 1}
+    current_level = ROLE_LEVEL.get(user["role"], 0)
+    target_level = ROLE_LEVEL.get(target.get("role"), 0)
+
+    is_self = target["id"] == user["id"]
     data = payload.model_dump(exclude_unset=True)
+
+    # 1) Nadie puede modificar su propio rol (evita auto-escalada o auto-degradación)
+    if is_self and "role" in data and data["role"] is not None and data["role"] != target.get("role"):
+        raise HTTPException(status_code=403, detail="No puedes modificar tu propio rol")
+
+    # 2) Nadie puede editar a un usuario con rol igual o mayor (a menos que sea a sí mismo)
+    if not is_self and target_level >= current_level:
+        raise HTTPException(status_code=403, detail="No tienes permiso para editar a un usuario con rol igual o superior")
+
+    # 3) Al asignar un rol, no puede ser mayor que el rol del que edita
+    if "role" in data and data["role"] is not None:
+        new_level = ROLE_LEVEL.get(data["role"], 0)
+        if new_level > current_level:
+            raise HTTPException(status_code=403, detail="No puedes asignar un rol superior al tuyo")
+        if new_level >= current_level and not is_self:
+            raise HTTPException(status_code=403, detail="No puedes promover a un usuario a tu mismo nivel o superior")
+
+    # 4) Admin no puede mover un usuario a otra organización
+    if user["role"] == "admin" and "organization_id" in data and data["organization_id"] != user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Cannot move user to another org")
+
+    update = {}
     if "password" in data and data["password"]:
         update["password_hash"] = hash_password(data.pop("password"))
     if "permissions" in data and data["permissions"] is not None:
@@ -348,7 +376,11 @@ async def delete_user(user_id: str, user: dict = Depends(require_admin)):
     if user["role"] == "admin" and target.get("organization_id") != user.get("organization_id"):
         raise HTTPException(status_code=403, detail="Cannot delete user from another org")
     if target["id"] == user["id"]:
-        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+        raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
+    # No eliminar usuarios con rol igual o superior al propio
+    ROLE_LEVEL = {"super_admin": 3, "admin": 2, "client": 1}
+    if ROLE_LEVEL.get(target.get("role"), 0) >= ROLE_LEVEL.get(user["role"], 0):
+        raise HTTPException(status_code=403, detail="No puedes eliminar a un usuario con rol igual o superior")
     await db.users.delete_one({"id": user_id})
     return {"ok": True}
 
@@ -408,6 +440,7 @@ async def list_alerts(
     user_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    archived: Optional[bool] = None,
     limit: int = Query(200, le=1000),
 ):
     q = {}
@@ -424,6 +457,14 @@ async def list_alerts(
         q["type"] = type
     if user_id:
         q["user_id"] = user_id
+    # Por defecto no se muestran alertas archivadas. Para verlas
+    # en el historial debe pasarse archived=true explícitamente.
+    if archived is True:
+        q["archived"] = True
+    elif archived is False:
+        q["archived"] = {"$ne": True}
+    else:
+        q["archived"] = {"$ne": True}
     if date_from or date_to:
         time_q = {}
         if date_from:
@@ -475,6 +516,37 @@ async def update_alert_status(
     await sio.emit("alert:updated", updated, room="admins")
     await sio.emit("alert:updated", updated, room=f"org:{alert['organization_id']}")
     return updated
+
+
+@api.post("/alerts/archive")
+async def archive_alerts(
+    user: dict = Depends(require_admin),
+    only_completed: bool = True,
+):
+    """Archiva alertas (soft delete). Por defecto solo las completadas.
+    Admin solo archiva las de su organización. Super Admin las de todas.
+    Las alertas archivadas no aparecen en el listado normal pero sí en el
+    historial (pasando archived=true en GET /alerts).
+    """
+    q = {"archived": {"$ne": True}}
+    if only_completed:
+        q["status"] = "completed"
+    if user["role"] == "admin":
+        q["organization_id"] = user.get("organization_id")
+
+    archived_at = datetime.now(timezone.utc).isoformat()
+    result = await db.alerts.update_many(
+        q,
+        {"$set": {
+            "archived": True,
+            "archived_at": archived_at,
+            "archived_by": user["id"],
+            "archived_by_name": user.get("name"),
+        }},
+    )
+    # Notificar admins para que limpien sus dashboards
+    await sio.emit("alerts:archived", {"count": result.modified_count, "archived_at": archived_at}, room="admins")
+    return {"archived_count": result.modified_count}
 
 
 # ======================================================

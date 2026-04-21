@@ -20,9 +20,10 @@ import { formatDistanceToNow, format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   Eye, MapPin, Image as ImageIcon, Volume2, Clock,
-  Siren, Flame, HeartPulse, Navigation, AlertTriangle,
+  Siren, Flame, HeartPulse, Wrench, AlertTriangle, Archive, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../../context/AuthContext";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -46,7 +47,7 @@ const TYPE_CFG = {
   panic:   { label: "PÁNICO",     Icon: Siren,      bg: "bg-rose-50 text-rose-700 border-rose-200" },
   fire:    { label: "INCENDIO",   Icon: Flame,      bg: "bg-orange-50 text-orange-700 border-orange-200" },
   medical: { label: "ASISTENCIA", Icon: HeartPulse, bg: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  on_way:  { label: "EN CAMINO",  Icon: Navigation, bg: "bg-sky-50 text-sky-700 border-sky-200" },
+  on_way:  { label: "UTILIDADES", Icon: Wrench,     bg: "bg-sky-50 text-sky-700 border-sky-200" },
   here:    { label: "ESTOY AQUÍ", Icon: MapPin,     bg: "bg-violet-50 text-violet-700 border-violet-200" },
   silent:  { label: "SILENCIOSA", Icon: Siren,      bg: "bg-rose-50 text-rose-700 border-rose-200" },
   normal:  { label: "NORMAL",     Icon: AlertTriangle, bg: "bg-amber-50 text-amber-700 border-amber-200" },
@@ -61,12 +62,16 @@ function FlyTo({ center }) {
 }
 
 export default function Alerts() {
+  const { user } = useAuth();
   const [alerts, setAlerts] = useState([]);
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [filterUser, setFilterUser] = useState("");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const { socket } = useSocket();
 
   const load = useCallback(async () => {
@@ -75,6 +80,7 @@ export default function Alerts() {
       const params = new URLSearchParams();
       if (filterStatus !== "all") params.append("status", filterStatus);
       if (filterType !== "all") params.append("type", filterType);
+      if (showArchived) params.append("archived", "true");
       const { data } = await api.get(`/alerts?${params.toString()}`);
       let filtered = data;
       if (filterUser.trim()) {
@@ -91,7 +97,7 @@ export default function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterType, filterUser]);
+  }, [filterStatus, filterType, filterUser, showArchived]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -102,13 +108,30 @@ export default function Alerts() {
       load();
     };
     const updateHandler = () => load();
+    const archivedHandler = () => load();
     socket.on("alert:new", newHandler);
     socket.on("alert:updated", updateHandler);
+    socket.on("alerts:archived", archivedHandler);
     return () => {
       socket.off("alert:new", newHandler);
       socket.off("alert:updated", updateHandler);
+      socket.off("alerts:archived", archivedHandler);
     };
   }, [socket, load]);
+
+  const archiveCompleted = async () => {
+    setArchiving(true);
+    try {
+      const { data } = await api.post("/alerts/archive?only_completed=true");
+      toast.success(`${data.archived_count} alerta(s) archivada(s)`);
+      setConfirmArchive(false);
+      load();
+    } catch {
+      toast.error("No se pudieron archivar");
+    } finally {
+      setArchiving(false);
+    }
+  };
 
   const changeStatus = async (status) => {
     if (!selected) return;
@@ -140,9 +163,35 @@ export default function Alerts() {
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto" data-testid="admin-alerts">
-      <div className="mb-6">
-        <p className="overline mb-2">Gestión</p>
-        <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Alertas</h1>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="overline mb-2">Gestión</p>
+          <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">
+            {showArchived ? "Historial de alertas" : "Alertas"}
+          </h1>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={showArchived ? "default" : "outline"}
+            onClick={() => setShowArchived((v) => !v)}
+            className="rounded-md"
+            data-testid="toggle-archived-button"
+          >
+            <Archive className="w-4 h-4 mr-2" strokeWidth={1.8} />
+            {showArchived ? "Ver activas" : "Ver archivadas"}
+          </Button>
+          {!showArchived && (user?.role === "super_admin" || user?.role === "admin") && (
+            <Button
+              variant="outline"
+              onClick={() => setConfirmArchive(true)}
+              className="rounded-md border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300"
+              data-testid="archive-completed-button"
+            >
+              <Trash2 className="w-4 h-4 mr-2" strokeWidth={1.8} />
+              Archivar completadas
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -171,7 +220,7 @@ export default function Alerts() {
               <SelectItem value="panic">Pánico</SelectItem>
               <SelectItem value="fire">Incendio</SelectItem>
               <SelectItem value="medical">Asistencia</SelectItem>
-              <SelectItem value="on_way">En camino</SelectItem>
+              <SelectItem value="on_way">Utilidades</SelectItem>
               <SelectItem value="here">Estoy aquí</SelectItem>
               <SelectItem value="silent">Silenciosa (legacy)</SelectItem>
               <SelectItem value="normal">Normal (legacy)</SelectItem>
@@ -420,6 +469,35 @@ export default function Alerts() {
               </>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmación archivar */}
+      <Dialog open={confirmArchive} onOpenChange={setConfirmArchive}>
+        <DialogContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 max-w-md rounded-lg" data-testid="confirm-archive-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <Archive className="w-5 h-5 text-rose-600" strokeWidth={1.8} />
+              Archivar alertas completadas
+            </DialogTitle>
+            <DialogDescription className="text-slate-600 dark:text-slate-400">
+              Esta acción moverá todas las alertas en estado <b>Completada</b> al historial.
+              No se borran — podés verlas luego con "Ver archivadas".
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end pt-3">
+            <Button variant="outline" onClick={() => setConfirmArchive(false)} disabled={archiving}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={archiveCompleted}
+              disabled={archiving}
+              className="bg-rose-600 hover:bg-rose-500 text-white"
+              data-testid="confirm-archive-button"
+            >
+              {archiving ? "Archivando..." : "Archivar"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

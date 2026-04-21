@@ -116,6 +116,24 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - ✅ Animación `pulse-slow` custom para el halo glow del SOS
 - ✅ Texto footer actualizado: "Todas las alertas envían tu ubicación automáticamente..."
 
+## Update 2026-04-21 (iteración 9 — Fase 1: Dark Admin + Archivar + Role Protection)
+- ✅ **Dark/Light mode en Admin** (toggle en sidebar, persiste en localStorage)
+- ✅ Botón "Archivar completadas" (soft-delete con flag `archived: true`)
+- ✅ Botón "Ver archivadas" para ver el historial de alertas archivadas
+- ✅ Endpoint `POST /api/alerts/archive?only_completed=true` (solo admins/super_admin)
+- ✅ `GET /api/alerts?archived=true` para listar archivadas
+- ✅ Filtro por defecto excluye archivadas (clientes solo ven activas)
+- ✅ Evento Socket.io `alerts:archived` para actualizar dashboards en tiempo real
+- ✅ **Protección crítica de rol propio**:
+  - `PUT /api/users/{id}`: no puedes cambiar tu propio rol (403)
+  - `DELETE /api/users/{id}`: no puedes eliminarte a ti mismo (400)
+  - No puedes editar usuarios con rol igual o superior al tuyo (403)
+  - No puedes asignar un rol superior o igual al tuyo a otros usuarios (403)
+  - Admin no puede mover usuario a otra organización
+- ✅ UI Users.jsx: iconos de editar/eliminar deshabilitados + tooltips para "TÚ" y "Sin permiso"
+- ✅ Dialog Editar Usuario: Select de rol deshabilitado si es el usuario propio, con label "(No puedes modificar tu propio rol)"
+- ✅ "UTILIDADES" reemplaza "EN CAMINO" también en admin (consistencia con cliente)
+
 ## Pendiente (próxima iteración)
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)

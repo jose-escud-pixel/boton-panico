@@ -159,24 +159,48 @@ export default function Users() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((u) => (
+              {users.map((u) => {
+                const isSelf = me?.id === u.id;
+                const ROLE_LEVEL = { super_admin: 3, admin: 2, client: 1 };
+                const canModify = !isSelf && (ROLE_LEVEL[me?.role] || 0) > (ROLE_LEVEL[u.role] || 0);
+                return (
                 <TableRow key={u.id} className="border-slate-100 hover:bg-slate-50" data-testid="user-row">
-                  <TableCell className="font-heading font-semibold text-slate-900">{u.name}</TableCell>
+                  <TableCell className="font-heading font-semibold text-slate-900">
+                    {u.name}
+                    {isSelf && <span className="ml-2 text-[0.6rem] text-slate-400 font-mono-tactical">(TÚ)</span>}
+                  </TableCell>
                   <TableCell className="text-slate-600 text-sm">{u.email}</TableCell>
                   <TableCell>
                     <Badge className={`rounded ${ROLE_STYLE[u.role]}`}>{u.role}</Badge>
                   </TableCell>
                   <TableCell className="text-slate-700 text-sm">{orgMap[u.organization_id] || "—"}</TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(u)} className="text-slate-500 hover:text-slate-900" data-testid="edit-user-button">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!canModify}
+                      title={isSelf ? "No puedes editarte a ti mismo" : !canModify ? "Sin permiso" : "Editar"}
+                      onClick={() => canModify && openEdit(u)}
+                      className="text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                      data-testid="edit-user-button"
+                    >
                       <Pencil className="w-4 h-4" strokeWidth={1.8} />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => remove(u)} className="text-slate-500 hover:text-rose-600" data-testid="delete-user-button">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!canModify}
+                      title={isSelf ? "No puedes eliminarte a ti mismo" : !canModify ? "Sin permiso" : "Eliminar"}
+                      onClick={() => canModify && remove(u)}
+                      className="text-slate-500 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                      data-testid="delete-user-button"
+                    >
                       <Trash2 className="w-4 h-4" strokeWidth={1.8} />
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
               {users.length === 0 && (
                 <TableRow><TableCell colSpan={5} className="text-slate-400 py-8 text-center">Sin usuarios</TableCell></TableRow>
               )}
@@ -233,8 +257,16 @@ export default function Users() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="overline block mb-1.5">Rol</Label>
-                <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
+                <Label className="overline block mb-1.5">
+                  Rol {editing && me?.id === editing.id && (
+                    <span className="text-[0.55rem] text-amber-600 ml-1">(No puedes modificar tu propio rol)</span>
+                  )}
+                </Label>
+                <Select
+                  value={form.role}
+                  onValueChange={(v) => setForm({ ...form, role: v })}
+                  disabled={editing && me?.id === editing.id}
+                >
                   <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-role-select">
                     <SelectValue />
                   </SelectTrigger>
