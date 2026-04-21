@@ -198,7 +198,22 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - Login device distinto → 423 ✅
 - Admin unbind → OK → nuevo device funciona ✅
 
+## Update 2026-04-21 (iteración 13 — Push Admin con sirena custom en celular bloqueado)
+- ✅ Backend `push.py` construye payload FCM con `channel_id="nacurutu_admin_panic"`, `sound="siren"`, `priority=max`, `visibility=public`, vibración custom (patrón SOS) y APNS con `sound=siren.caf`
+- ✅ Nuevo archivo `/app/deploy/assets/siren.ogg` — sirena sintética dual-tone (650/900 Hz, 6s, ~20 KB, Vorbis) generada con ffmpeg
+- ✅ `build-android-apk.sh` paso 7f: copia `siren.ogg` a `android/app/src/main/res/raw/siren.ogg` SÓLO en build admin (`--admin`)
+- ✅ Nuevo helper `ensureAdminPanicChannel()` en `lib/nativePush.js` crea el canal Android `nacurutu_admin_panic` con `importance: 5` (HIGH), `visibility: 1` (PUBLIC), `sound: "siren"`, `vibration: true`, `lights: true` (rojo)
+- ✅ `registerNativePush()` llama a `ensureAdminPanicChannel()` automáticamente en build admin antes de registrar FCM
+- ✅ Resultado: admins reciben pánico con sirena fuerte **incluso con el celular bloqueado y pantalla apagada**, vibración tipo SOS, LED rojo
+
+### Próximos pasos del usuario
+1. Pull del código actualizado en su servidor (`git pull`)
+2. `sudo bash deploy/build-android-apk.sh --admin` (compila nueva APK admin con siren.ogg)
+3. Instalar la APK en un celular admin (desinstalar la vieja para que se recree el canal con sirena — Android no actualiza sonidos de canales existentes)
+4. Probar enviando un pánico desde cliente — el admin debe oír la sirena aunque el celular esté bloqueado
+
 ## Pendiente (próxima iteración)
+- P1: Ícono custom del launcher del APK Admin (SVG táctico con escudo/chevron) reemplazando el default de Capacitor
 - P1: SMS fallback vía Twilio si el push falla
 - P2: Múltiples logos por organización (comisión/junta/vecinos)
 - P2: Responsive mejorado del Admin Dashboard en móvil

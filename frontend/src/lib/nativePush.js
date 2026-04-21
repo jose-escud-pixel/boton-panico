@@ -5,6 +5,47 @@
  */
 import { Capacitor } from "@capacitor/core";
 import api from "./api";
+import { IS_ADMIN_BUILD } from "./buildMode";
+
+/**
+ * ID del canal de notificaciones Android para alertas de pánico de admins.
+ * DEBE coincidir EXACTAMENTE con el `channel_id` enviado por el backend en push.py.
+ */
+export const ADMIN_PANIC_CHANNEL_ID = "nacurutu_admin_panic";
+
+/**
+ * Crea el canal Android "nacurutu_admin_panic" con sonido sirena custom,
+ * importancia máxima, visibilidad pública y vibración.
+ *
+ * El sonido `siren` referencia el archivo en android/app/src/main/res/raw/siren.ogg
+ * (se copia durante el build con build-android-apk.sh).
+ *
+ * Llamar sólo en builds ADMIN. Android exige crear el canal ANTES del primer
+ * push — una vez creado, el usuario puede cambiar sus propiedades manualmente
+ * pero el sonido/importancia inicial sólo se aplica si el canal aún no existe.
+ */
+export async function ensureAdminPanicChannel() {
+  if (!isNative()) return { ok: false, reason: "not-native" };
+  if (getPlatform() !== "android") return { ok: false, reason: "not-android" };
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    await PushNotifications.createChannel({
+      id: ADMIN_PANIC_CHANNEL_ID,
+      name: "Alertas de pánico",
+      description: "Alertas críticas de ÑACURUTU — sirena fuerte aún con pantalla bloqueada",
+      importance: 5, // IMPORTANCE_HIGH (máximo antes de IMPORTANCE_MAX que está deprecado)
+      visibility: 1, // VISIBILITY_PUBLIC (se muestra contenido sobre la pantalla de bloqueo)
+      sound: "siren", // referencia a res/raw/siren.ogg (sin extensión)
+      vibration: true,
+      lights: true,
+      lightColor: "#FF0000",
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("ensureAdminPanicChannel failed", e);
+    return { ok: false, reason: "error", error: String(e) };
+  }
+}
 
 export function isNative() {
   try {
@@ -31,6 +72,12 @@ export async function registerNativePush() {
 
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
+
+    // 0) Si es build admin, crear canal con sirena ANTES de registrar
+    //    (Android aplica sonido/importancia sólo al crear el canal por 1ra vez).
+    if (IS_ADMIN_BUILD && getPlatform() === "android") {
+      await ensureAdminPanicChannel();
+    }
 
     // 1) Request permission
     const perm = await PushNotifications.requestPermissions();

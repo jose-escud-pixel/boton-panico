@@ -275,6 +275,19 @@ else
     fi
 fi
 
+# ---------- Paso 7f: Copiar siren.ogg a res/raw (sólo build admin) ----------
+if [ "$BUILD_MODE" = "admin" ]; then
+    SIREN_SRC="$PROJECT_ROOT/deploy/assets/siren.ogg"
+    RES_RAW_DIR="$ANDROID_DIR/app/src/main/res/raw"
+    if [ -f "$SIREN_SRC" ]; then
+        mkdir -p "$RES_RAW_DIR"
+        cp "$SIREN_SRC" "$RES_RAW_DIR/siren.ogg"
+        log "Paso 7f — siren.ogg copiada a res/raw (modo admin)"
+    else
+        warn "Paso 7f — No se encontró $SIREN_SRC. El push admin no tendrá sonido custom."
+    fi
+fi
+
 # ---------- Paso 8: Build APK debug ----------
 log "Paso 8 — Compilando APK..."
 cd "$ANDROID_DIR"
