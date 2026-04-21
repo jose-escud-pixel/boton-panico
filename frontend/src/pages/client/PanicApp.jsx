@@ -28,6 +28,7 @@ import ClientSettingsDialog from "../../components/ClientSettingsDialog";
 import UpdateBanner from "../../components/UpdateBanner";
 import VersionBadge from "../../components/VersionBadge";
 import SponsorContacts from "../../components/SponsorContacts";
+import OrganizationLogos from "../../components/OrganizationLogos";
 
 const ALERT_TYPES = {
   panic:   { label: "SOS",        Icon: Siren,      accent: "rose",     voice: "Pánico" },
@@ -425,11 +426,14 @@ export default function PanicApp() {
           transition={{ duration: 0.4 }}
           className="mb-4"
         >
-          <h2 className={`font-heading text-2xl font-bold tracking-tight ${
-            isDark ? "text-white" : "text-slate-900"
-          }`}>
-            Mis alertas
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className={`font-heading text-2xl font-bold tracking-tight ${
+              isDark ? "text-white" : "text-slate-900"
+            }`}>
+              Mis alertas
+            </h2>
+            <OrganizationLogos isDark={isDark} />
+          </div>
           <div className={`h-px mt-3 ${isDark ? "bg-slate-700" : "bg-slate-200"}`} />
         </motion.div>
 
@@ -472,6 +476,10 @@ export default function PanicApp() {
             {/* Pulse ripples */}
             <span className="absolute inset-0 rounded-3xl ripple-ring pointer-events-none" />
             <span className="absolute inset-0 rounded-3xl ripple-ring ripple-ring-delay-1 pointer-events-none" />
+            {/* BETA badge */}
+            <span className="absolute top-3 right-3 bg-amber-400 text-slate-900 text-[0.55rem] font-black tracking-widest px-1.5 py-0.5 rounded shadow-lg z-10">
+              BETA
+            </span>
             {/* SOS chip */}
             <div className="relative bg-white rounded-2xl px-7 py-3 shadow-lg">
               <span className="font-display text-5xl font-black text-rose-600 tracking-widest leading-none">SOS</span>
@@ -604,7 +612,7 @@ export default function PanicApp() {
                     value={message}
                     onChange={(e) => { pauseCountdown(); setMessage(e.target.value); }}
                     placeholder="Describe la situación..."
-                    className="bg-white border-slate-200 rounded-md min-h-[70px]"
+                    className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-md min-h-[70px]"
                     data-testid="dialog-message"
                   />
                 </div>
@@ -614,8 +622,8 @@ export default function PanicApp() {
                   <label className="cursor-pointer">
                     <div className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-md text-sm border transition-colors ${
                       imageDataUrl
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
+                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
                     }`}>
                       <ImageIcon className="w-4 h-4" strokeWidth={1.8} />
                       <span className="font-semibold">{imageDataUrl ? "Foto lista" : "Agregar foto"}</span>
@@ -637,8 +645,8 @@ export default function PanicApp() {
                       onClick={startRecording}
                       className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-md text-sm border transition-colors ${
                         audioDataUrl
-                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
+                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
                       }`}
                       data-testid="dialog-record-button"
                     >
@@ -706,7 +714,7 @@ export default function PanicApp() {
 
       {/* History */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="bg-white border-slate-200 rounded-lg max-w-md" data-testid="client-history-dialog">
+        <DialogContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg max-w-md" data-testid="client-history-dialog">
           <DialogHeader>
             <DialogTitle className="font-heading tracking-tight">Mi historial</DialogTitle>
           </DialogHeader>
@@ -723,7 +731,7 @@ export default function PanicApp() {
                 a.status === "in_process" ? "text-amber-600" : "text-rose-600";
               const typeCfg = ALERT_TYPES[a.type] || { label: a.type?.toUpperCase() || "ALERTA" };
               return (
-                <div key={a.id} className="p-3 border border-slate-200 bg-white rounded-md" data-testid="client-history-item">
+                <div key={a.id} className="p-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-md" data-testid="client-history-item">
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-heading font-semibold text-sm uppercase text-slate-800">{typeCfg.label}</span>
                     <div className={`flex items-center gap-1 ${color}`}>

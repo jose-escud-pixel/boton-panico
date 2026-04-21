@@ -62,29 +62,31 @@ function ContactCard({ Badge, name, subtitle, phone, tel, accent, isDark }) {
   return (
     <a
       href={`tel:${tel}`}
-      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all flex-1 min-w-0 group
+      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all flex-1 min-w-0 group
                   ${isDark
                     ? "bg-slate-800/60 border border-slate-700/60 hover:bg-slate-800 hover:border-slate-600"
                     : "bg-white/80 border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm hover:shadow-md"}`}
       data-testid={`sponsor-${name.toLowerCase()}`}
     >
-      <Badge size={36} />
+      <div className="flex-shrink-0">
+        <Badge size={28} />
+      </div>
       <div className="min-w-0 flex-1">
-        <div className={`flex items-baseline gap-1 font-heading font-bold text-sm leading-tight ${
+        <div className={`flex items-baseline gap-1 font-heading font-bold text-xs leading-tight ${
           isDark ? "text-white" : "text-slate-900"
         }`}>
-          {name}
-          <span className={`text-[0.55rem] font-normal tracking-wide ${
+          <span>{name}</span>
+          <span className={`text-[0.5rem] font-normal tracking-wide ${
             isDark ? "text-slate-400" : "text-slate-500"
           }`}>
             {subtitle}
           </span>
         </div>
-        <div className={`flex items-center gap-1 mt-0.5 text-xs font-mono tracking-tight ${
+        <div className={`flex items-center gap-1 mt-0.5 text-[0.7rem] font-mono whitespace-nowrap ${
           accent === "rose" ? "text-rose-600 dark:text-rose-400" : "text-blue-600 dark:text-blue-400"
         } group-hover:underline`}>
-          <Phone className="w-3 h-3" strokeWidth={2.2} />
-          {phone}
+          <Phone className="w-2.5 h-2.5 flex-shrink-0" strokeWidth={2.2} />
+          <span>{phone}</span>
         </div>
       </div>
     </a>
