@@ -144,32 +144,38 @@ async def _send_fcm_to_admins(db, alert: dict):
         return
     org_id = alert.get("organization_id")
     tokens_docs = await db.fcm_tokens.find(_admin_query(org_id), {"_id": 0}).to_list(1000)
-    tokens = [t["token"] for t in tokens_docs if t.get("token")]
-    if not tokens:
+    # Separar tokens por rol y plataforma para customizar la notificación
+    admin_tokens = [t["token"] for t in tokens_docs if t.get("token")]
+    if not admin_tokens:
         return
 
     phrase = PHRASE_MAP.get(alert.get("type"), "Nueva alerta")
     title = f"🚨 {phrase.upper()}"
     body = f"{alert.get('user_name', 'Usuario')} — {alert.get('organization_name') or ''}"
 
+    # Canal dedicado para admins — sirena custom + bypassDnd + full-screen intent.
+    # El archivo de sonido debe existir en android/app/src/main/res/raw/siren.ogg
+    # El canal se crea automáticamente desde la app al primer mensaje.
     message = messaging.MulticastMessage(
-        tokens=tokens,
+        tokens=admin_tokens,
         notification=messaging.Notification(title=title, body=body),
         data={
             "alertId": str(alert.get("id", "")),
             "alertType": str(alert.get("type", "")),
             "organizationId": str(alert.get("organization_id", "")),
             "timestamp": str(alert.get("timestamp", "")),
+            "isPanic": "true" if alert.get("type") == "panic" else "false",
         },
         android=messaging.AndroidConfig(
             priority="high",
             notification=messaging.AndroidNotification(
-                sound="default",
-                channel_id="nacurutu_alerts",
-                default_vibrate_timings=True,
-                default_sound=True,
+                sound="siren",  # busca android/app/src/main/res/raw/siren.ogg
+                channel_id="nacurutu_admin_panic",
+                default_vibrate_timings=False,
+                vibrate_timings_millis=[0, 500, 200, 500, 200, 500],
                 visibility="public",
                 priority="max",
+                notification_count=1,
             ),
         ),
         apns=messaging.APNSConfig(
@@ -177,7 +183,7 @@ async def _send_fcm_to_admins(db, alert: dict):
             payload=messaging.APNSPayload(
                 aps=messaging.Aps(
                     alert=messaging.ApsAlert(title=title, body=body),
-                    sound="default",
+                    sound="siren.caf",
                     badge=1,
                     content_available=True,
                     mutable_content=True,
@@ -196,8 +202,8 @@ async def _send_fcm_to_admins(db, alert: dict):
                     err = resp.exception
                     code = getattr(err, "code", "") if err else ""
                     if code in ("registration-token-not-registered", "invalid-argument", "invalid-registration-token"):
-                        await db.fcm_tokens.delete_one({"token": tokens[i]})
-                        logger.info(f"Deleted invalid FCM token")
+                        await db.fcm_tokens.delete_one({"token": admin_tokens[i]})
+                        logger.info("Deleted invalid FCM token")
     except Exception as e:
         logger.exception(f"FCM send failed: {e}")
 
