@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkfrontend=globalThis.webpackChunkfrontend||[]).push([[471],{4471(e,n,b){b.d(n,{Device:()=>c});const c=(0,b(9344).F3)("Device",{web:()=>b.e(933).then(b.bind(b,8933)).then(e=>new e.DeviceWeb)})}}]);

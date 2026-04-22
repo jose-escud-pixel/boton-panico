@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkfrontend=globalThis.webpackChunkfrontend||[]).push([[229],{3229(e,n,r){r.d(n,{Browser:()=>s});const s=(0,r(9344).F3)("Browser",{web:()=>r.e(127).then(r.bind(r,7127)).then(e=>new e.BrowserWeb)})}}]);
