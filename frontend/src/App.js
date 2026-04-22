@@ -21,7 +21,10 @@ if (typeof document !== "undefined") {
   document.title = IS_ADMIN_BUILD ? "ÑACURUTU Admin" : "ÑACURUTU Seguridad";
 }
 
-const BASENAME = process.env.REACT_APP_BASE_PATH || "";
+// El Router basename se usa SOLO en web y APK cliente (que cargan desde
+// /boton-panico). El APK admin es self-contained y carga desde
+// capacitor://localhost/, así que debe tener basename vacío.
+const BASENAME = IS_ADMIN_BUILD ? "" : (process.env.REACT_APP_BASE_PATH || "");
 
 function ProtectedRoute({ children, roles }) {
   const { user, checking } = useAuth();
