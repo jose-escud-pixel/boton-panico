@@ -200,8 +200,12 @@ fi
 if [ "$BUILD_MODE" = "admin" ]; then
     # Limpiar bundle admin previo para evitar assets colgantes
     rm -rf "$FRONTEND_DIR/build-admin"
-    BUILD_PATH=build-admin REACT_APP_BUILD_MODE=admin yarn build
-    log "   → Bundle admin generado en $FRONTEND_DIR/build-admin/"
+    # CRITICAL: PUBLIC_URL="./" hace todos los paths relativos. Esto es OBLIGATORIO
+    # porque el APK admin carga desde `capacitor://localhost/` y no desde
+    # `/boton-panico`. Con paths absolutos `/boton-panico/static/...` la app queda
+    # en blanco porque Capacitor no puede resolverlos.
+    PUBLIC_URL="./" BUILD_PATH=build-admin REACT_APP_BUILD_MODE=admin yarn build
+    log "   → Bundle admin generado en $FRONTEND_DIR/build-admin/ (paths relativos)"
 else
     REACT_APP_BUILD_MODE=client yarn build
     log "   → Bundle cliente publicado en $FRONTEND_DIR/build/"
@@ -392,51 +396,52 @@ if [ "$BUILD_MODE" = "admin" ]; then
     fi
 fi
 
-# ---------- Paso 7g: Copiar icono custom del launcher (sólo build admin) ----------
-# El icono por default de Capacitor es igual al del cliente. En modo admin
-# sobreescribimos los 5 tamaños de mipmap con el icono del búho con badge ADMIN
-# (fuente: deploy/assets/icons/ic_launcher_*.png).
+# ---------- Paso 7g: Copiar icono custom del launcher ----------
+# Cada build tiene su icono:
+#   - Cliente: deploy/assets/icons-client/ (rosa + SOS)
+#   - Admin:   deploy/assets/icons-admin/  (oscuro + ADMIN)
+# Siempre sobreescribimos los 5 tamaños + eliminamos los adaptive-icon XMLs
+# para forzar que Android use nuestros PNGs.
 if [ "$BUILD_MODE" = "admin" ]; then
-    ICONS_SRC="$PROJECT_ROOT/deploy/assets/icons"
-    RES_DIR="$ANDROID_DIR/app/src/main/res"
-    if [ -d "$ICONS_SRC" ]; then
-        log "Paso 7g — Copiando iconos launcher custom (modo admin)..."
-        COPIED=0
-        for DPI in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            MIPMAP_DIR="$RES_DIR/mipmap-$DPI"
-            mkdir -p "$MIPMAP_DIR"
-            if [ -f "$ICONS_SRC/ic_launcher_$DPI.png" ]; then
-                cp "$ICONS_SRC/ic_launcher_$DPI.png" "$MIPMAP_DIR/ic_launcher.png"
-                COPIED=$((COPIED+1))
-            fi
-            if [ -f "$ICONS_SRC/ic_launcher_round_$DPI.png" ]; then
-                cp "$ICONS_SRC/ic_launcher_round_$DPI.png" "$MIPMAP_DIR/ic_launcher_round.png"
-            fi
-            if [ -f "$ICONS_SRC/ic_launcher_foreground_$DPI.png" ]; then
-                cp "$ICONS_SRC/ic_launcher_foreground_$DPI.png" "$MIPMAP_DIR/ic_launcher_foreground.png"
-            fi
-        done
-        log "   $COPIED densidad(es) de icono admin copiadas"
-
-        # CRÍTICO: Android 8+ usa `mipmap-anydpi-v26/ic_launcher.xml` (adaptive
-        # icon) que referencia layers por separado. Si no lo sobrescribimos,
-        # nuestros PNGs son ignorados y Android sigue mostrando el viejo default.
-        # Solución: eliminar los XML de adaptive-icon → Android cae al PNG normal.
-        ANYDPI_DIR="$RES_DIR/mipmap-anydpi-v26"
-        if [ -d "$ANYDPI_DIR" ]; then
-            rm -f "$ANYDPI_DIR/ic_launcher.xml" "$ANYDPI_DIR/ic_launcher_round.xml"
-            log "   + mipmap-anydpi-v26/*.xml eliminados (fuerza usar PNGs custom)"
+    ICONS_SRC="$PROJECT_ROOT/deploy/assets/icons-admin"
+else
+    ICONS_SRC="$PROJECT_ROOT/deploy/assets/icons-client"
+fi
+RES_DIR="$ANDROID_DIR/app/src/main/res"
+if [ -d "$ICONS_SRC" ]; then
+    log "Paso 7g — Copiando iconos launcher custom (modo $BUILD_MODE)..."
+    COPIED=0
+    for DPI in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+        MIPMAP_DIR="$RES_DIR/mipmap-$DPI"
+        mkdir -p "$MIPMAP_DIR"
+        if [ -f "$ICONS_SRC/ic_launcher_$DPI.png" ]; then
+            cp "$ICONS_SRC/ic_launcher_$DPI.png" "$MIPMAP_DIR/ic_launcher.png"
+            COPIED=$((COPIED+1))
         fi
-        # Tambien limpiar cualquier drawable de ic_launcher_background / foreground
-        # generado por Capacitor para evitar que Gradle las use en vez de las nuestras
-        for DRAW_DIR in "$RES_DIR/drawable" "$RES_DIR/drawable-v24" "$RES_DIR/drawable-anydpi-v26"; do
-            if [ -d "$DRAW_DIR" ]; then
-                rm -f "$DRAW_DIR/ic_launcher_background.xml" "$DRAW_DIR/ic_launcher_foreground.xml"
-            fi
-        done
-    else
-        warn "Paso 7g — No se encontró $ICONS_SRC. Se usa el icono default."
+        if [ -f "$ICONS_SRC/ic_launcher_round_$DPI.png" ]; then
+            cp "$ICONS_SRC/ic_launcher_round_$DPI.png" "$MIPMAP_DIR/ic_launcher_round.png"
+        fi
+        if [ -f "$ICONS_SRC/ic_launcher_foreground_$DPI.png" ]; then
+            cp "$ICONS_SRC/ic_launcher_foreground_$DPI.png" "$MIPMAP_DIR/ic_launcher_foreground.png"
+        fi
+    done
+    log "   $COPIED densidad(es) de icono copiadas (modo $BUILD_MODE)"
+
+    # CRÍTICO: Android 8+ usa `mipmap-anydpi-v26/ic_launcher.xml` (adaptive
+    # icon) que referencia layers por separado. Si no lo eliminamos,
+    # nuestros PNGs son ignorados y Android sigue mostrando el viejo default.
+    ANYDPI_DIR="$RES_DIR/mipmap-anydpi-v26"
+    if [ -d "$ANYDPI_DIR" ]; then
+        rm -f "$ANYDPI_DIR/ic_launcher.xml" "$ANYDPI_DIR/ic_launcher_round.xml"
+        log "   + mipmap-anydpi-v26/*.xml eliminados (fuerza usar PNGs custom)"
     fi
+    for DRAW_DIR in "$RES_DIR/drawable" "$RES_DIR/drawable-v24" "$RES_DIR/drawable-anydpi-v26"; do
+        if [ -d "$DRAW_DIR" ]; then
+            rm -f "$DRAW_DIR/ic_launcher_background.xml" "$DRAW_DIR/ic_launcher_foreground.xml"
+        fi
+    done
+else
+    warn "Paso 7g — No se encontró $ICONS_SRC. Se usa el icono default."
 fi
 
 # ---------- Paso 8: Build APK debug ----------
