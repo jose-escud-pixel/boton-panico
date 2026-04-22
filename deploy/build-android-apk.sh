@@ -59,6 +59,24 @@ err() { echo -e "${RED}ERROR:${NC} $*" >&2; }
 
 log "${BLUE}BUILD MODE: $BUILD_MODE${NC}  →  $APP_DISPLAY_NAME"
 
+# ---------- Guard: restaurar config si quedó huérfana de una corrida previa fallida ----------
+# Si existe un backup de capacitor.config.json de una corrida anterior que falló
+# (ej: build admin interrumpido), lo restauramos ANTES de hacer cualquier cosa
+# para evitar que un build cliente use accidentalmente la config admin.
+if [ -f "$FRONTEND_DIR/capacitor.config.json.backup" ]; then
+    warn "Detectado capacitor.config.json.backup huérfano — restaurando (corrida previa falló)"
+    mv "$FRONTEND_DIR/capacitor.config.json.backup" "$FRONTEND_DIR/capacitor.config.json"
+fi
+
+# Trap: restaurar SIEMPRE la config al salir del script (exit normal, error o Ctrl+C)
+restore_capacitor_config() {
+    if [ -f "$FRONTEND_DIR/capacitor.config.json.backup" ]; then
+        mv "$FRONTEND_DIR/capacitor.config.json.backup" "$FRONTEND_DIR/capacitor.config.json"
+        echo "==> capacitor.config.json restaurado (trap)"
+    fi
+}
+trap restore_capacitor_config EXIT
+
 # ---------- Paso 1: Verificar dependencias del sistema ----------
 log "Paso 1 — Verificando herramientas..."
 
