@@ -30,17 +30,22 @@ if [ "$BUILD_MODE" = "admin" ]; then
     CAPACITOR_CONFIG="$FRONTEND_DIR/capacitor.admin.config.json"
     APK_FILENAME="nacurutu-admin-latest.apk"
     VERSION_JSON_FILENAME="version-admin.json"
-    VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code-admin"
     APP_DISPLAY_NAME="ÑACURUTU Seguridad Admin"
     APP_ID="net.aranduinformatica.nacurutu.admin"
 else
     CAPACITOR_CONFIG="$FRONTEND_DIR/capacitor.config.json"
     APK_FILENAME="nacurutu-latest.apk"
     VERSION_JSON_FILENAME="version.json"
-    VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
     APP_DISPLAY_NAME="ÑACURUTU Seguridad"
     APP_ID="net.aranduinformatica.nacurutu"
 fi
+
+# Contador GLOBAL (compartido entre cliente y admin) para evitar regresiones
+# accidentales de versionCode. Android rechaza instalar un APK con versionCode
+# menor al ya instalado — así que siempre subimos, pase lo que pase.
+VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
+# Archivos legacy (deprecados, sólo se leen para sincronizar al máximo)
+LEGACY_ADMIN_VC="$PROJECT_ROOT/.apk-version-code-admin"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -112,19 +117,36 @@ log "Paso 3 — google-services.json OK"
 # ---------- Paso 3b: Auto-increment versionCode + sync APP_BUILD en el bundle JS ----------
 # IMPORTANTE: debe correr ANTES de yarn build para que el bundle embebido
 # tenga el APP_BUILD correcto (el que luego se comparará contra version.json).
-# VERSION_CODE_FILE ya se definió arriba según BUILD_MODE.
+#
+# Usamos un contador GLOBAL y además nos sincronizamos con el MAYOR versionCode
+# publicado (entre counter, legacy admin counter, version.json del cliente y del
+# admin). Android rechaza APKs con versionCode menor al ya instalado, así que
+# nunca bajamos — siempre subimos desde el máximo conocido.
 if [ ! -f "$VERSION_CODE_FILE" ]; then
-    echo "1" > "$VERSION_CODE_FILE"
+    echo "0" > "$VERSION_CODE_FILE"
 fi
 
-CURRENT_CODE=$(cat "$VERSION_CODE_FILE")
+# Recolectar todos los versionCode posibles y quedarnos con el máximo
+MAX_SEEN=$(cat "$VERSION_CODE_FILE" 2>/dev/null || echo 0)
+if [ -f "$LEGACY_ADMIN_VC" ]; then
+    L=$(cat "$LEGACY_ADMIN_VC" 2>/dev/null || echo 0)
+    [ "$L" -gt "$MAX_SEEN" ] && MAX_SEEN=$L
+fi
+for VJ in "$PROJECT_ROOT/downloads/version.json" "$PROJECT_ROOT/downloads/version-admin.json"; do
+    if [ -f "$VJ" ]; then
+        VC=$(python3 -c "import json; print(json.load(open('$VJ')).get('versionCode', 0))" 2>/dev/null || echo 0)
+        [ "$VC" -gt "$MAX_SEEN" ] && MAX_SEEN=$VC
+    fi
+done
+
+CURRENT_CODE=$MAX_SEEN
 NEW_CODE=$((CURRENT_CODE + 1))
 echo "$NEW_CODE" > "$VERSION_CODE_FILE"
 
 APP_VERSION_NAME=$(grep -E "APP_VERSION\s*=" "$FRONTEND_DIR/src/lib/appVersion.js" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
 APP_VERSION_NAME="${APP_VERSION_NAME:-1.0.0}"
 
-log "Paso 3b — versionCode: $CURRENT_CODE → $NEW_CODE, versionName: $APP_VERSION_NAME"
+log "Paso 3b — versionCode sincronizado al máximo conocido: $CURRENT_CODE → $NEW_CODE (versionName: $APP_VERSION_NAME)"
 
 # Escribir el nuevo APP_BUILD en appVersion.js para que el bundle JS lo tenga
 APP_VERSION_JS="$FRONTEND_DIR/src/lib/appVersion.js"
