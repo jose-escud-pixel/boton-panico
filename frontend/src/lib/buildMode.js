@@ -1,41 +1,42 @@
 /**
  * Detección de "modo admin" en tiempo de EJECUCIÓN.
  *
- * IMPORTANTE: no podemos confiar solo en REACT_APP_BUILD_MODE porque el APK
- * carga el bundle desde `server.url` (remoto), así que la variable de build
- * es la del último `yarn build` hecho en el servidor — no la del APK.
+ * IMPORTANTE (decisión de diseño):
+ * - NO usamos localStorage / sessionStorage para persistir el flag, porque
+ *   admin y cliente APK comparten el MISMO origen (www.aranduinformatica.net).
+ *   Si uno persistiera, el otro lo leería y se contaminaría.
+ * - Dependemos 100% del query param `?admin=1` en el URL inicial.
+ * - Capacitor recarga `server.url` al abrir la app cada vez, así que el
+ *   admin APK siempre ve el param. El cliente APK nunca lo ve.
+ * - El main web (`/boton-panico`) por defecto es cliente-looking (sin banner
+ *   admin). Si el admin entra desde allí, puede loguear igual y termina en
+ *   `/admin/dashboard`; sólo el estilo del Login es distinto.
  *
- * Estrategia:
- *  1) La APK admin tiene `server.url = https://.../boton-panico/?admin=1`
- *     → al primer load detectamos el query param y lo guardamos en localStorage.
- *  2) En loads posteriores (navegación React Router puede limpiar la query),
- *     leemos de localStorage.
- *  3) Fallback a la env var para compilaciones locales/test.
+ * Para testear manualmente desde cualquier navegador:
+ *   https://www.aranduinformatica.net/boton-panico/?admin=1 → admin-looking
+ *   https://www.aranduinformatica.net/boton-panico/        → client-looking
  */
 
-const STORAGE_KEY = "nacurutu.build_mode";
-
-function detectAndPersist() {
-  if (typeof window === "undefined") return null;
+function detectMode() {
+  if (typeof window === "undefined") return "client";
   try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("admin") === "1") {
-      window.localStorage.setItem(STORAGE_KEY, "admin");
-      return "admin";
+    const url = new URL(window.location.href);
+    const isAdmin = url.searchParams.get("admin") === "1";
+    // Limpiamos la URL para que el usuario no vea `?admin=1` en la barra
+    // (evita que comparta links con el flag visible). No afecta la detección
+    // porque ya leímos el valor.
+    if (isAdmin) {
+      url.searchParams.delete("admin");
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
     }
-    // Si la URL explícitamente pide modo cliente, limpiamos (útil para testing)
-    if (params.get("client") === "1") {
-      window.localStorage.setItem(STORAGE_KEY, "client");
-      return "client";
-    }
-    return window.localStorage.getItem(STORAGE_KEY);
+    return isAdmin ? "admin" : "client";
   } catch {
-    return null;
+    return "client";
   }
 }
 
-const runtimeMode = detectAndPersist();
-const envMode = process.env.REACT_APP_BUILD_MODE;
+const runtimeMode = detectMode();
+const envMode = process.env.REACT_APP_BUILD_MODE; // sólo para dev/local
 
-export const BUILD_MODE = runtimeMode || envMode || "client";
+export const BUILD_MODE = runtimeMode === "admin" ? "admin" : (envMode || "client");
 export const IS_ADMIN_BUILD = BUILD_MODE === "admin";
