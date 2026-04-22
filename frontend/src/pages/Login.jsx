@@ -145,7 +145,7 @@ export default function Login() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5" noValidate>
             <div>
               <Label htmlFor="identifier" className={`overline block mb-2 ${
                 IS_ADMIN_BUILD ? "text-slate-400" : ""

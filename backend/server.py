@@ -913,13 +913,28 @@ async def push_fcm_unregister(payload: dict, user: dict = Depends(get_current_us
 # ---------- CORS ----------
 app.include_router(api)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Si CORS_ORIGINS contiene "*" usamos regex para hacer eco del Origin header.
+# Necesario porque allow_origins=["*"] + allow_credentials=True es una combinación
+# que los navegadores rechazan (la respuesta debe llevar el origin exacto, no "*").
+# El admin APK sirve desde https://localhost y necesita credenciales para cookies.
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
+_origins_list = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+if "*" in _origins_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origin_regex=".*",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origins=_origins_list,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # Wrap FastAPI with Socket.IO ASGI app (mounted at /api/socket.io so it passes through k8s ingress)
