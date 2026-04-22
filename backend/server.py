@@ -30,6 +30,7 @@ from models import (
     UserCreate,
     UserUpdate,
     LoginRequest,
+    ChangePasswordRequest,
     DeviceBind,
     AlertCreate,
     AlertStatusUpdate,
@@ -181,6 +182,18 @@ def strip_sensitive(user_doc: dict) -> dict:
 # Cache de la versión requerida. Se invalida cada 30s para que un re-deploy
 # sea detectado sin reiniciar el backend.
 _version_cache = {"build": None, "ts": 0}
+
+
+def _is_owner(user: dict) -> bool:
+    """El usuario 'owner' es el super_admin cuyo email coincide con
+    la variable de entorno SUPER_ADMIN_EMAIL. Este usuario tiene potestad
+    sobre TODOS los demás usuarios (incluso otros super_admin), excepto
+    sobre sí mismo (no puede eliminarse ni bajarse el rol).
+    """
+    owner_email = (os.environ.get("SUPER_ADMIN_EMAIL") or "").strip().lower()
+    if not owner_email:
+        return False
+    return (user.get("email") or "").strip().lower() == owner_email
 
 
 def _get_required_app_build() -> Optional[int]:
@@ -359,11 +372,17 @@ async def login(payload: LoginRequest, request: Request, response: Response):
     )
     refresh_token = create_refresh_token(user["id"])
     set_auth_cookies(response, access_token, refresh_token)
-    return {"user": strip_sensitive(user), "access_token": access_token}
+    public = strip_sensitive(user)
+    public["is_owner"] = _is_owner(public)
+    return {"user": public, "access_token": access_token}
 
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
+    # Añadimos un flag `is_owner` para que el frontend pueda mostrar/ocultar
+    # controles que sólo el dueño de la instalación puede ejecutar.
+    user = dict(user)
+    user["is_owner"] = _is_owner(user)
     return user
 
 
@@ -390,6 +409,27 @@ async def refresh(request: Request, response: Response):
     )
     new_refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access_token, new_refresh)
+    return {"ok": True}
+
+
+@api.post("/auth/change-password")
+async def change_password(
+    payload: ChangePasswordRequest, user: dict = Depends(get_current_user)
+):
+    """El usuario autenticado cambia su propia contraseña.
+    Requiere current_password. new_password mínimo 6 caracteres (validado en el schema)."""
+    # Traer el hash actual desde DB (get_current_user no lo incluye)
+    db_user = await db.users.find_one({"id": user["id"]})
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if not verify_password(payload.current_password, db_user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Contraseña actual incorrecta")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="La nueva contraseña debe ser distinta de la actual")
+    new_hash = hash_password(payload.new_password)
+    await db.users.update_one(
+        {"id": user["id"]}, {"$set": {"password_hash": new_hash}}
+    )
     return {"ok": True}
 
 
@@ -511,6 +551,7 @@ async def update_user(user_id: str, payload: UserUpdate, user: dict = Depends(re
     ROLE_LEVEL = {"super_admin": 3, "admin": 2, "client": 1}
     current_level = ROLE_LEVEL.get(user["role"], 0)
     target_level = ROLE_LEVEL.get(target.get("role"), 0)
+    is_owner = _is_owner(user)
 
     is_self = target["id"] == user["id"]
     data = payload.model_dump(exclude_unset=True)
@@ -520,15 +561,17 @@ async def update_user(user_id: str, payload: UserUpdate, user: dict = Depends(re
         raise HTTPException(status_code=403, detail="No puedes modificar tu propio rol")
 
     # 2) Nadie puede editar a un usuario con rol igual o mayor (a menos que sea a sí mismo)
-    if not is_self and target_level >= current_level:
+    #    EXCEPCIÓN: el owner (SUPER_ADMIN_EMAIL) puede editar a otros super_admin.
+    if not is_self and target_level >= current_level and not is_owner:
         raise HTTPException(status_code=403, detail="No tienes permiso para editar a un usuario con rol igual o superior")
 
-    # 3) Al asignar un rol, no puede ser mayor que el rol del que edita
+    # 3) Al asignar un rol, no puede ser mayor que el rol del que edita.
+    #    El owner puede asignar super_admin a otros.
     if "role" in data and data["role"] is not None:
         new_level = ROLE_LEVEL.get(data["role"], 0)
         if new_level > current_level:
             raise HTTPException(status_code=403, detail="No puedes asignar un rol superior al tuyo")
-        if new_level >= current_level and not is_self:
+        if new_level >= current_level and not is_self and not is_owner:
             raise HTTPException(status_code=403, detail="No puedes promover a un usuario a tu mismo nivel o superior")
 
     # 4) Admin no puede mover un usuario a otra organización
@@ -568,9 +611,11 @@ async def delete_user(user_id: str, user: dict = Depends(require_admin)):
     if target["id"] == user["id"]:
         raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
     # No eliminar usuarios con rol igual o superior al propio
+    # EXCEPCIÓN: el owner (SUPER_ADMIN_EMAIL) puede eliminar a cualquiera.
     ROLE_LEVEL = {"super_admin": 3, "admin": 2, "client": 1}
-    if ROLE_LEVEL.get(target.get("role"), 0) >= ROLE_LEVEL.get(user["role"], 0):
-        raise HTTPException(status_code=403, detail="No puedes eliminar a un usuario con rol igual o superior")
+    if not _is_owner(user):
+        if ROLE_LEVEL.get(target.get("role"), 0) >= ROLE_LEVEL.get(user["role"], 0):
+            raise HTTPException(status_code=403, detail="No puedes eliminar a un usuario con rol igual o superior")
     await db.users.delete_one({"id": user_id})
     return {"ok": True}
 

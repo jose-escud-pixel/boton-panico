@@ -15,11 +15,13 @@ import {
   VolumeX,
   Sun,
   Moon,
+  KeyRound,
 } from "lucide-react";
 import { useSocket } from "../../context/SocketContext";
 import { useAlertAudio } from "../../context/AlertAudioContext";
 import { useOrg } from "../../context/OrgContext";
 import VersionBadge from "../../components/VersionBadge";
+import ChangePasswordDialog from "../../components/ChangePasswordDialog";
 
 const navItems = [
   { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard", test: "nav-dashboard" },
@@ -36,6 +38,7 @@ export default function AdminLayout() {
   const { orgs, activeOrgId, selectOrg, canSwitch } = useOrg();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pwdOpen, setPwdOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -136,6 +139,16 @@ export default function AdminLayout() {
           </Button>
 
           <Button
+            onClick={() => setPwdOpen(true)}
+            variant="ghost"
+            className="w-full justify-start text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
+            data-testid="change-password-button"
+          >
+            <KeyRound className="w-4 h-4 mr-2" strokeWidth={1.8} />
+            Cambiar contraseña
+          </Button>
+
+          <Button
             onClick={handleLogout}
             variant="ghost"
             className="w-full justify-start text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
@@ -150,6 +163,8 @@ export default function AdminLayout() {
           </div>
         </div>
       </aside>
+
+      <ChangePasswordDialog open={pwdOpen} onOpenChange={setPwdOpen} />
 
       {sidebarOpen && (
         <div

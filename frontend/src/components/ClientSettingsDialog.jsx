@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { Zap, Power, AlertCircle, CheckCircle2, Smartphone } from "lucide-react";
+import { Zap, Power, AlertCircle, CheckCircle2, Smartphone, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import {
   isPowerButtonSupported,
@@ -14,10 +14,12 @@ import {
   enablePowerButton,
   disablePowerButton,
 } from "../lib/powerButtonPanic";
+import ChangePasswordDialog from "./ChangePasswordDialog";
 
 export default function ClientSettingsDialog({ open, onOpenChange }) {
   const [powerEnabled, setPowerEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pwdOpen, setPwdOpen] = useState(false);
   const supported = isPowerButtonSupported();
 
   useEffect(() => {
@@ -117,7 +119,35 @@ export default function ClientSettingsDialog({ open, onOpenChange }) {
               {busy ? "Procesando..." : powerEnabled ? "Desactivar" : "Activar"}
             </Button>
           </div>
+
+          {/* Cambiar contraseña */}
+          <div className="border border-slate-200 rounded-lg p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="h-10 w-10 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center flex-shrink-0">
+                <KeyRound className="w-5 h-5 text-slate-700" strokeWidth={1.8} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900">
+                  Cambiar contraseña
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Actualizá la contraseña de tu cuenta. Necesitás conocer la actual.
+                </div>
+              </div>
+            </div>
+            <Button
+              onClick={() => setPwdOpen(true)}
+              variant="outline"
+              className="w-full border-slate-300 text-slate-700 hover:bg-slate-50 rounded-md"
+              data-testid="open-change-password-client"
+            >
+              <KeyRound className="w-4 h-4 mr-2" strokeWidth={1.8} />
+              Cambiar mi contraseña
+            </Button>
+          </div>
         </div>
+
+        <ChangePasswordDialog open={pwdOpen} onOpenChange={setPwdOpen} />
       </DialogContent>
     </Dialog>
   );

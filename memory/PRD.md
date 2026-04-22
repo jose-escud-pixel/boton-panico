@@ -198,7 +198,32 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - Login device distinto → 423 ✅
 - Admin unbind → OK → nuevo device funciona ✅
 
-## Update 2026-04-21 (iteración 13 — Push Admin con sirena custom en celular bloqueado)
+## Update 2026-04-22 (iteración 14 — Cambio de contraseña + Owner bypass + APKs separadas + Fix update button)
+
+### Backend
+- ✅ Nuevo endpoint `POST /api/auth/change-password` — el usuario autenticado cambia su propia contraseña (requiere `current_password` + `new_password` ≥ 6 chars, valida que sean distintas).
+- ✅ Nuevo modelo `ChangePasswordRequest` en `models.py`.
+- ✅ Helper `_is_owner(user)` en `server.py`: detecta si el email del usuario coincide con `SUPER_ADMIN_EMAIL` (env var).
+- ✅ `update_user` y `delete_user` ahora permiten al **owner** (jose@aranduinformatica.net) editar/eliminar a otros super_admin. El owner sigue sin poder eliminarse ni cambiarse el rol a sí mismo (medidas de seguridad básicas).
+- ✅ `/api/auth/login` y `/api/auth/me` devuelven ahora `is_owner: true/false` en el objeto user para que el frontend muestre/oculte UI correspondiente.
+
+### Frontend
+- ✅ Nuevo componente `ChangePasswordDialog.jsx` reutilizable (admin y cliente), con mostrar/ocultar contraseña, validación de longitud, confirmación, error inline.
+- ✅ `AdminLayout` — nuevo botón "Cambiar contraseña" en sidebar (entre Silenciar y Logout) con icono `KeyRound`.
+- ✅ `ClientSettingsDialog` — nueva tarjeta "Cambiar contraseña" dentro de la pantalla de Configuración del cliente.
+- ✅ `UpdateBanner` / `Login.jsx` / `AppsDownloadCard`: botones de descarga de APK ahora usan helper `openApkDownload()` (`@capacitor/browser@6`). Dentro de la APK el botón ACTUALIZAR realmente abre Chrome Custom Tab y descarga el APK. Fix del bug "el botón de actualizar no hace nada".
+
+### Build script
+- ✅ `deploy/build-android-apk.sh` — nueva variable `APP_ID` según modo (cliente: `net.aranduinformatica.nacurutu`, admin: `net.aranduinformatica.nacurutu.admin`).
+- ✅ Nuevo Paso 7c.2: sobrescribe `applicationId` en `app/build.gradle` y `app_name` en `strings.xml` según el modo. Esto evita el conflicto "la admin me pide actualizar la de cliente" — ahora Android las trata como dos apps distintas e independientes.
+- ✅ Nuevo Paso 7f: copia `siren.ogg` a `res/raw` sólo en build admin (siren custom).
+
+### Testing curl
+- Change password con contraseña actual incorrecta → 401 ✅
+- Change password con nueva < 6 chars → 422 ✅
+- Change password con nueva == actual → 400 ✅
+- Change password exitoso → 200 + login con nueva contraseña funciona ✅
+- `/api/auth/me` devuelve `is_owner: true` para jose@aranduinformatica.net ✅
 - ✅ Backend `push.py` construye payload FCM con `channel_id="nacurutu_admin_panic"`, `sound="siren"`, `priority=max`, `visibility=public`, vibración custom (patrón SOS) y APNS con `sound=siren.caf`
 - ✅ Nuevo archivo `/app/deploy/assets/siren.ogg` — sirena sintética dual-tone (650/900 Hz, 6s, ~20 KB, Vorbis) generada con ffmpeg
 - ✅ `build-android-apk.sh` paso 7f: copia `siren.ogg` a `android/app/src/main/res/raw/siren.ogg` SÓLO en build admin (`--admin`)

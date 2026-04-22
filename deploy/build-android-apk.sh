@@ -32,12 +32,14 @@ if [ "$BUILD_MODE" = "admin" ]; then
     VERSION_JSON_FILENAME="version-admin.json"
     VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code-admin"
     APP_DISPLAY_NAME="ÑACURUTU Seguridad Admin"
+    APP_ID="net.aranduinformatica.nacurutu.admin"
 else
     CAPACITOR_CONFIG="$FRONTEND_DIR/capacitor.config.json"
     APK_FILENAME="nacurutu-latest.apk"
     VERSION_JSON_FILENAME="version.json"
     VERSION_CODE_FILE="$PROJECT_ROOT/.apk-version-code"
     APP_DISPLAY_NAME="ÑACURUTU Seguridad"
+    APP_ID="net.aranduinformatica.nacurutu"
 fi
 
 GREEN='\033[0;32m'
@@ -194,6 +196,27 @@ sed -i -E "s/versionName[[:space:]]+\"[^\"]*\"/versionName \"$APP_VERSION_NAME\"
 # Verificación
 if ! grep -q "versionCode $NEW_CODE" "$BUILD_GRADLE_APP"; then
     warn "No se pudo actualizar versionCode en $BUILD_GRADLE_APP — seguimos igual."
+fi
+
+# ---------- Paso 7c.2: Aplicar applicationId + app_name según modo ----------
+# CRUCIAL: sin esto, cliente y admin APK comparten el mismo package ID y
+# Android los trata como "actualización" en vez de apps distintas.
+# Reemplazamos applicationId en app/build.gradle y app_name en strings.xml.
+log "Paso 7c.2 — applicationId=$APP_ID, app_name=\"$APP_DISPLAY_NAME\""
+sed -i -E "s/applicationId[[:space:]]+\"[^\"]*\"/applicationId \"$APP_ID\"/" "$BUILD_GRADLE_APP"
+if ! grep -q "applicationId \"$APP_ID\"" "$BUILD_GRADLE_APP"; then
+    warn "No se pudo actualizar applicationId en $BUILD_GRADLE_APP"
+fi
+
+STRINGS_XML="$ANDROID_DIR/app/src/main/res/values/strings.xml"
+if [ -f "$STRINGS_XML" ]; then
+    # Escapar caracteres que pueden romper sed (principalmente / y &)
+    SAFE_NAME=$(echo "$APP_DISPLAY_NAME" | sed -e 's/[\/&]/\\&/g')
+    sed -i -E "s|<string name=\"app_name\">[^<]*</string>|<string name=\"app_name\">$SAFE_NAME</string>|" "$STRINGS_XML"
+    sed -i -E "s|<string name=\"title_activity_main\">[^<]*</string>|<string name=\"title_activity_main\">$SAFE_NAME</string>|" "$STRINGS_XML"
+    if ! grep -q ">$APP_DISPLAY_NAME<" "$STRINGS_XML"; then
+        warn "No se pudo actualizar app_name en $STRINGS_XML"
+    fi
 fi
 
 # ---------- Paso 7d: Asegurar permisos en AndroidManifest.xml ----------

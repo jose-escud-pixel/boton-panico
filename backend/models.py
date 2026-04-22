@@ -130,6 +130,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6)
+
+
 # ---------- Alerts ----------
 # panic, fire, medical, on_way, here = nuevos tipos; silent, normal = legacy (compatibilidad)
 AlertType = Literal["panic", "fire", "medical", "on_way", "here", "silent", "normal"]
