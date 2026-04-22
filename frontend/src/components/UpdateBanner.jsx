@@ -3,21 +3,22 @@ import { Download, X, Sparkles } from "lucide-react";
 import { APP_VERSION, APP_BUILD, APK_URL, fetchRemoteVersion } from "../lib/appVersion";
 import { isNative } from "../lib/nativePush";
 import { openApkDownload } from "../lib/apkDownload";
+import { IS_ADMIN_BUILD } from "../lib/buildMode";
 
 /**
  * Banner que detecta si hay una nueva versión de la APK disponible.
- * Sólo se muestra en la app nativa (Capacitor), nunca en web
- * (los usuarios web siempre tienen la última versión).
  *
- * Criterio: versionCode (entero auto-incremental). Si el remote tiene un
- * versionCode mayor que APP_BUILD embebido, aparece el banner.
+ * - Cliente APK (remote bundle): detecta OTA vía `version.json` publicado.
+ * - Admin APK (self-contained): NO tiene OTA. Las actualizaciones requieren
+ *   reinstalar el APK. El banner no se muestra.
+ * - Web: nunca se muestra (los usuarios web siempre tienen la última versión).
  */
 export default function UpdateBanner() {
   const [remote, setRemote] = useState(null);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (!isNative()) return;
+    if (!isNative() || IS_ADMIN_BUILD) return;
     let cancelled = false;
     (async () => {
       const data = await fetchRemoteVersion();
@@ -30,7 +31,7 @@ export default function UpdateBanner() {
     return () => { cancelled = true; };
   }, []);
 
-  if (!isNative() || !remote || dismissed) return null;
+  if (!isNative() || IS_ADMIN_BUILD || !remote || dismissed) return null;
 
   const apkUrl = remote.apk_url || APK_URL;
 

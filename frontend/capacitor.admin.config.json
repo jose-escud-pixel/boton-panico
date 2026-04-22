@@ -1,12 +1,7 @@
 {
   "appId": "net.aranduinformatica.nacurutu.admin",
   "appName": "ÑACURUTU Seguridad Admin",
-  "webDir": "build",
-  "server": {
-    "url": "https://www.aranduinformatica.net/boton-panico/?admin=1",
-    "cleartext": false,
-    "androidScheme": "https"
-  },
+  "webDir": "build-admin",
   "android": {
     "allowMixedContent": false,
     "captureInput": true,

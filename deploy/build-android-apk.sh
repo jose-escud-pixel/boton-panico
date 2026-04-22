@@ -192,7 +192,20 @@ if [ "$BUILD_MODE" = "admin" ]; then
     log "   → capacitor.config.json sobrescrito con versión admin"
 fi
 
-REACT_APP_BUILD_MODE=$BUILD_MODE yarn build
+# SEPARACIÓN TOTAL de bundles:
+# - Cliente: yarn build → frontend/build/ (servido por Apache en /boton-panico)
+# - Admin:   BUILD_PATH=build-admin yarn build → frontend/build-admin/ (baked en APK admin)
+# Así el bundle que se publica en la web queda SIEMPRE en /build/ (cliente),
+# y el admin vive en su propio directorio sin contaminar la web.
+if [ "$BUILD_MODE" = "admin" ]; then
+    # Limpiar bundle admin previo para evitar assets colgantes
+    rm -rf "$FRONTEND_DIR/build-admin"
+    BUILD_PATH=build-admin REACT_APP_BUILD_MODE=admin yarn build
+    log "   → Bundle admin generado en $FRONTEND_DIR/build-admin/"
+else
+    REACT_APP_BUILD_MODE=client yarn build
+    log "   → Bundle cliente publicado en $FRONTEND_DIR/build/"
+fi
 
 # ---------- Paso 5: Generar el proyecto Android con Capacitor (si no existe) ----------
 if [ ! -d "$ANDROID_DIR" ]; then
