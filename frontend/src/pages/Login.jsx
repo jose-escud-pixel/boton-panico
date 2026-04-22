@@ -11,11 +11,10 @@ import { isNative } from "../lib/nativePush";
 import { IS_ADMIN_BUILD } from "../lib/buildMode";
 import { openApkDownload } from "../lib/apkDownload";
 import VersionBadge from "../components/VersionBadge";
-
 const APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
 
 export default function Login() {
-  const { user, login } = useAuth();
+  const { user, login, logout } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,7 +38,18 @@ export default function Login() {
       const u = await login(email, password);
       // Si este es el build de la APK admin y el usuario es cliente → bloqueo
       if (IS_ADMIN_BUILD && u.role === "client") {
+        await logout().catch(() => {});
         setError("Esta es la app de administrador. Instalá 'ÑACURUTU Seguridad' si sos cliente.");
+        return;
+      }
+      // Si este es el APK cliente (native, no admin build) y el usuario es
+      // admin/super_admin → bloqueo por seguridad. Los operadores deben usar
+      // la APK admin o el sitio web, NUNCA la APK cliente.
+      if (isNative() && !IS_ADMIN_BUILD && u.role !== "client") {
+        await logout().catch(() => {});
+        setError(
+          "Esta es la app de cliente. Los administradores deben usar la APK 'ÑACURUTU Seguridad Admin' o el sitio web."
+        );
         return;
       }
       if (u.role === "client") navigate("/client");
