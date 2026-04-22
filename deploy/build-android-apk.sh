@@ -168,6 +168,34 @@ fi
 log "Paso 6 — Copiando google-services.json al módulo Android..."
 cp "$GOOGLE_SERVICES_SRC" "$ANDROID_DIR/app/google-services.json"
 
+# ---------- Paso 6b: Parchar package_name del google-services.json ----------
+# El archivo original de Firebase tiene registrado net.aranduinformatica.nacurutu.
+# Cuando compilamos admin (applicationId = ...nacurutu.admin), el plugin
+# google-services falla con "No matching client found for package name".
+# Solución: reescribir el package_name de todos los clients al APP_ID actual.
+# Como ambas APKs viven en el mismo proyecto Firebase (mismo sender_id, api_key),
+# FCM sigue funcionando perfectamente para las dos.
+log "Paso 6b — Reescribiendo package_name en google-services.json → $APP_ID"
+python3 <<PYEOF
+import json, sys
+path = "$ANDROID_DIR/app/google-services.json"
+try:
+    with open(path) as f:
+        d = json.load(f)
+    changed = 0
+    for c in d.get("client", []):
+        ci = c.get("client_info", {}).get("android_client_info", {})
+        if ci.get("package_name") != "$APP_ID":
+            ci["package_name"] = "$APP_ID"
+            changed += 1
+    with open(path, "w") as f:
+        json.dump(d, f, indent=2)
+    print(f"   → {changed} client(s) parchados a $APP_ID")
+except Exception as e:
+    print(f"ERROR parchando google-services.json: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
 # ---------- Paso 7: Aplicar plugin Google Services al build.gradle ----------
 BUILD_GRADLE_APP="$ANDROID_DIR/app/build.gradle"
 BUILD_GRADLE_ROOT="$ANDROID_DIR/build.gradle"
