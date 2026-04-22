@@ -361,6 +361,36 @@ if [ "$BUILD_MODE" = "admin" ]; then
     fi
 fi
 
+# ---------- Paso 7g: Copiar icono custom del launcher (sólo build admin) ----------
+# El icono por default de Capacitor es igual al del cliente. En modo admin
+# sobreescribimos los 5 tamaños de mipmap con el icono del búho con badge ADMIN
+# (fuente: deploy/assets/icons/ic_launcher_*.png).
+if [ "$BUILD_MODE" = "admin" ]; then
+    ICONS_SRC="$PROJECT_ROOT/deploy/assets/icons"
+    RES_DIR="$ANDROID_DIR/app/src/main/res"
+    if [ -d "$ICONS_SRC" ]; then
+        log "Paso 7g — Copiando iconos launcher custom (modo admin)..."
+        COPIED=0
+        for DPI in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            MIPMAP_DIR="$RES_DIR/mipmap-$DPI"
+            mkdir -p "$MIPMAP_DIR"
+            if [ -f "$ICONS_SRC/ic_launcher_$DPI.png" ]; then
+                cp "$ICONS_SRC/ic_launcher_$DPI.png" "$MIPMAP_DIR/ic_launcher.png"
+                COPIED=$((COPIED+1))
+            fi
+            if [ -f "$ICONS_SRC/ic_launcher_round_$DPI.png" ]; then
+                cp "$ICONS_SRC/ic_launcher_round_$DPI.png" "$MIPMAP_DIR/ic_launcher_round.png"
+            fi
+            if [ -f "$ICONS_SRC/ic_launcher_foreground_$DPI.png" ]; then
+                cp "$ICONS_SRC/ic_launcher_foreground_$DPI.png" "$MIPMAP_DIR/ic_launcher_foreground.png"
+            fi
+        done
+        log "   $COPIED densidad(es) de icono admin copiadas"
+    else
+        warn "Paso 7g — No se encontró $ICONS_SRC. Se usa el icono default."
+    fi
+fi
+
 # ---------- Paso 8: Build APK debug ----------
 log "Paso 8 — Compilando APK..."
 cd "$ANDROID_DIR"

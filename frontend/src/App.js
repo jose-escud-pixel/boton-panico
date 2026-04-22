@@ -6,6 +6,7 @@ import { AlertAudioProvider } from "./context/AlertAudioContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { OrgProvider } from "./context/OrgContext";
 import { Toaster } from "./components/ui/sonner";
+import { IS_ADMIN_BUILD } from "./lib/buildMode";
 
 import Login from "./pages/Login";
 import AdminLayout from "./pages/admin/AdminLayout";
@@ -14,6 +15,11 @@ import Alerts from "./pages/admin/Alerts";
 import Users from "./pages/admin/Users";
 import Organizations from "./pages/admin/Organizations";
 import PanicApp from "./pages/client/PanicApp";
+
+// Cambiar el título del documento según el build (cliente vs admin)
+if (typeof document !== "undefined") {
+  document.title = IS_ADMIN_BUILD ? "ÑACURUTU Admin" : "ÑACURUTU Seguridad";
+}
 
 const BASENAME = process.env.REACT_APP_BASE_PATH || "";
 

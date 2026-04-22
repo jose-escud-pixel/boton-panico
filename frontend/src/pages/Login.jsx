@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { OwlLogo } from "../components/OwlLogo";
-import { Loader2, ShieldAlert, Download, Smartphone } from "lucide-react";
+import { Loader2, ShieldAlert, Download, Smartphone, ShieldCheck } from "lucide-react";
 import { isNative } from "../lib/nativePush";
 import { IS_ADMIN_BUILD } from "../lib/buildMode";
 import { openApkDownload } from "../lib/apkDownload";
@@ -65,14 +65,20 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-screen w-full flex items-center justify-center px-4 relative overflow-hidden bg-slate-50"
+      className={`min-h-screen w-full flex items-center justify-center px-4 relative overflow-hidden ${
+        IS_ADMIN_BUILD
+          ? "bg-slate-950 text-slate-100"
+          : "bg-slate-50"
+      }`}
       data-testid="login-page"
+      data-build-mode={IS_ADMIN_BUILD ? "admin" : "client"}
     >
       {/* Subtle grid pattern */}
       <div className="absolute inset-0 opacity-[0.35] pointer-events-none"
         style={{
-          backgroundImage:
-            "linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)",
+          backgroundImage: IS_ADMIN_BUILD
+            ? "linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)"
+            : "linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)",
           backgroundSize: "40px 40px",
           maskImage: "radial-gradient(ellipse at center, #000 40%, transparent 80%)",
           WebkitMaskImage: "radial-gradient(ellipse at center, #000 40%, transparent 80%)",
@@ -80,25 +86,62 @@ export default function Login() {
       />
 
       <div className="relative w-full max-w-md">
-        <div className="flex items-center gap-2 mb-8">
+        {/* ADMIN banner — sólo visible en build admin */}
+        {IS_ADMIN_BUILD && (
+          <div
+            className="mb-4 flex items-center gap-2 bg-rose-600/10 border border-rose-500/50 rounded-lg px-3 py-2"
+            data-testid="admin-login-banner"
+          >
+            <ShieldCheck className="w-4 h-4 text-rose-400 flex-shrink-0" strokeWidth={2} />
+            <div className="flex-1">
+              <div className="text-[0.65rem] uppercase tracking-[0.2em] text-rose-400 font-bold">
+                Modo Administrador
+              </div>
+              <div className="text-xs text-slate-400 mt-0.5">
+                Acceso restringido — personal autorizado
+              </div>
+            </div>
+            <span className="text-[0.55rem] font-mono tracking-wider bg-rose-600 text-white px-2 py-0.5 rounded uppercase">
+              ADMIN
+            </span>
+          </div>
+        )}
+
+        <div className={`flex items-center gap-2 mb-8 ${IS_ADMIN_BUILD ? "text-slate-400" : ""}`}>
           <div className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-          <span className="overline">Sistema de Emergencia · v1.0</span>
+          <span className="overline">
+            {IS_ADMIN_BUILD ? "Command Center · v1.0" : "Sistema de Emergencia · v1.0"}
+          </span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-8 shadow-sm">
+        <div className={`rounded-xl p-8 shadow-sm border ${
+          IS_ADMIN_BUILD
+            ? "bg-slate-900 border-slate-700"
+            : "bg-white border-slate-200"
+        }`}>
           <div className="flex items-center gap-4 mb-8">
             <OwlLogo size={56} />
             <div>
-              <h1 className="font-heading text-2xl font-bold tracking-tight leading-none text-slate-900">
+              <h1 className={`font-heading text-2xl font-bold tracking-tight leading-none ${
+                IS_ADMIN_BUILD ? "text-white" : "text-slate-900"
+              }`}>
                 ÑACURUTU
               </h1>
-              <p className="overline mt-1">Seguridad · Command Center</p>
+              <p className={`overline mt-1 ${
+                IS_ADMIN_BUILD ? "text-rose-400 font-bold" : ""
+              }`}>
+                {IS_ADMIN_BUILD ? "Seguridad · Panel Admin" : "Seguridad · Command Center"}
+              </p>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <Label htmlFor="identifier" className="overline block mb-2">Usuario o correo</Label>
+              <Label htmlFor="identifier" className={`overline block mb-2 ${
+                IS_ADMIN_BUILD ? "text-slate-400" : ""
+              }`}>
+                Usuario o correo
+              </Label>
               <Input
                 id="identifier"
                 type="text"
@@ -107,12 +150,20 @@ export default function Login() {
                 placeholder="usuario o tu@correo.com"
                 required
                 autoComplete="username"
-                className="bg-slate-50 border-slate-200 h-11 rounded-md focus-visible:ring-rose-600 focus-visible:ring-offset-0"
+                className={`h-11 rounded-md focus-visible:ring-rose-600 focus-visible:ring-offset-0 ${
+                  IS_ADMIN_BUILD
+                    ? "bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                    : "bg-slate-50 border-slate-200"
+                }`}
                 data-testid="login-email-input"
               />
             </div>
             <div>
-              <Label htmlFor="password" className="overline block mb-2">Clave</Label>
+              <Label htmlFor="password" className={`overline block mb-2 ${
+                IS_ADMIN_BUILD ? "text-slate-400" : ""
+              }`}>
+                Clave
+              </Label>
               <Input
                 id="password"
                 type="password"
@@ -121,7 +172,11 @@ export default function Login() {
                 placeholder="••••••••"
                 required
                 autoComplete="current-password"
-                className="bg-slate-50 border-slate-200 h-11 rounded-md focus-visible:ring-rose-600 focus-visible:ring-offset-0"
+                className={`h-11 rounded-md focus-visible:ring-rose-600 focus-visible:ring-offset-0 ${
+                  IS_ADMIN_BUILD
+                    ? "bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                    : "bg-slate-50 border-slate-200"
+                }`}
                 data-testid="login-password-input"
               />
             </div>
@@ -231,8 +286,12 @@ export default function Login() {
           </button>
         )}
 
-        <p className="text-center text-slate-400 text-xs mt-6 font-mono-tactical">
-          ÑACURUTU SEGURIDAD © 2026 · Vigilancia 24/7
+        <p className={`text-center text-xs mt-6 font-mono-tactical ${
+          IS_ADMIN_BUILD ? "text-slate-500" : "text-slate-400"
+        }`}>
+          {IS_ADMIN_BUILD
+            ? "ÑACURUTU SEGURIDAD · PANEL ADMIN © 2026"
+            : "ÑACURUTU SEGURIDAD © 2026 · Vigilancia 24/7"}
         </p>
         <div className="flex justify-center mt-2">
           <VersionBadge compact />

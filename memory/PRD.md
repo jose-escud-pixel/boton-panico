@@ -198,6 +198,28 @@ Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, 
 - Login device distinto → 423 ✅
 - Admin unbind → OK → nuevo device funciona ✅
 
+## Update 2026-04-22 (iteración 15 — Admin launcher icon + login diferenciado + contador unificado)
+
+### Build script
+- ✅ **Contador versionCode UNIFICADO** (`.apk-version-code`) — antes admin y cliente tenían contadores separados y el cliente bajaba de versión al recompilar. Ahora el script toma el MÁXIMO entre: counter file, counter legacy admin, `version.json` cliente y `version-admin.json` → +1. Imposible hacer regresión.
+- ✅ **Paso 6b**: reescribe `package_name` en `google-services.json` al `APP_ID` actual (fix error "No matching client found for package name" en build admin).
+- ✅ **Paso 7g**: copia 5 densidades de iconos launcher custom (`mdpi → xxxhdpi`) + round + foreground SÓLO en build admin, reemplazando el icono default de Capacitor.
+
+### Nuevos assets
+- ✅ `/app/deploy/assets/icon-admin.svg` — SVG 512x512 con fondo oscuro táctico + búho ÑACURUTU (reutilizando paths del `OwlLogo` web) + ribbon rojo grande "ADMIN" con borde ámbar.
+- ✅ `/app/deploy/assets/icons/ic_launcher_*.png` — 15 archivos generados con `rsvg-convert` (5 densidades × 3 variantes: cuadrada, redonda, foreground).
+
+### Login diferenciado (admin vs cliente)
+- ✅ `Login.jsx` detecta `IS_ADMIN_BUILD` y cambia:
+  - Fondo: `bg-slate-950` oscuro vs `bg-slate-50` claro
+  - Grid: `#1e293b` vs `#e2e8f0`
+  - Card: `bg-slate-900 border-slate-700` vs `bg-white border-slate-200`
+  - Banner superior nuevo: "Modo Administrador · Acceso restringido · personal autorizado" con badge rojo ADMIN
+  - Subtítulo: "Seguridad · Panel Admin" vs "Seguridad · Command Center"
+  - Footer: "ÑACURUTU SEGURIDAD · PANEL ADMIN © 2026" vs "ÑACURUTU SEGURIDAD © 2026 · Vigilancia 24/7"
+  - Inputs: fondo oscuro vs claro
+- ✅ `App.js` cambia `document.title` al arrancar según build (`ÑACURUTU Admin` vs `ÑACURUTU Seguridad`) → aparece distinto en el task switcher Android
+
 ## Update 2026-04-22 (iteración 14 — Cambio de contraseña + Owner bypass + APKs separadas + Fix update button)
 
 ### Backend
