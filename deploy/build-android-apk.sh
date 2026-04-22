@@ -386,6 +386,23 @@ if [ "$BUILD_MODE" = "admin" ]; then
             fi
         done
         log "   $COPIED densidad(es) de icono admin copiadas"
+
+        # CRÍTICO: Android 8+ usa `mipmap-anydpi-v26/ic_launcher.xml` (adaptive
+        # icon) que referencia layers por separado. Si no lo sobrescribimos,
+        # nuestros PNGs son ignorados y Android sigue mostrando el viejo default.
+        # Solución: eliminar los XML de adaptive-icon → Android cae al PNG normal.
+        ANYDPI_DIR="$RES_DIR/mipmap-anydpi-v26"
+        if [ -d "$ANYDPI_DIR" ]; then
+            rm -f "$ANYDPI_DIR/ic_launcher.xml" "$ANYDPI_DIR/ic_launcher_round.xml"
+            log "   + mipmap-anydpi-v26/*.xml eliminados (fuerza usar PNGs custom)"
+        fi
+        # Tambien limpiar cualquier drawable de ic_launcher_background / foreground
+        # generado por Capacitor para evitar que Gradle las use en vez de las nuestras
+        for DRAW_DIR in "$RES_DIR/drawable" "$RES_DIR/drawable-v24" "$RES_DIR/drawable-anydpi-v26"; do
+            if [ -d "$DRAW_DIR" ]; then
+                rm -f "$DRAW_DIR/ic_launcher_background.xml" "$DRAW_DIR/ic_launcher_foreground.xml"
+            fi
+        done
     else
         warn "Paso 7g — No se encontró $ICONS_SRC. Se usa el icono default."
     fi
