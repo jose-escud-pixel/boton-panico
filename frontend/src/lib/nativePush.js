@@ -7,11 +7,33 @@ import { Capacitor } from "@capacitor/core";
 import api from "./api";
 import { IS_ADMIN_BUILD } from "./buildMode";
 
-/**
- * ID del canal de notificaciones Android para alertas de pánico de admins.
- * DEBE coincidir EXACTAMENTE con el `channel_id` enviado por el backend en push.py.
- */
-export const ADMIN_PANIC_CHANNEL_ID = "nacurutu_admin_panic";
+export const ADMIN_CHANNELS = {
+  police: {
+    id: "nacurutu_admin_police_v2",
+    name: "Alertas policiales",
+    description: "Pánico y alertas críticas con sirena policial",
+    sound: "police",
+  },
+  fire: {
+    id: "nacurutu_admin_fire_v2",
+    name: "Alertas de incendio",
+    description: "Incendio con sirena de bomberos",
+    sound: "firetruck",
+  },
+  ambulance: {
+    id: "nacurutu_admin_ambulance_v2",
+    name: "Alertas médicas",
+    description: "Asistencia médica con sirena de ambulancia",
+    sound: "ambulance",
+  },
+};
+
+function channelForAlertType(alertType) {
+  // Mantener coherencia con backend/push.py
+  if (alertType === "fire") return ADMIN_CHANNELS.fire;
+  if (alertType === "medical") return ADMIN_CHANNELS.ambulance;
+  return ADMIN_CHANNELS.police;
+}
 
 /**
  * Crea el canal Android "nacurutu_admin_panic" con sonido sirena custom,
@@ -29,17 +51,20 @@ export async function ensureAdminPanicChannel() {
   if (getPlatform() !== "android") return { ok: false, reason: "not-android" };
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
-    await PushNotifications.createChannel({
-      id: ADMIN_PANIC_CHANNEL_ID,
-      name: "Alertas de pánico",
-      description: "Alertas críticas de ÑACURUTU — sirena fuerte aún con pantalla bloqueada",
-      importance: 5, // IMPORTANCE_HIGH (máximo antes de IMPORTANCE_MAX que está deprecado)
-      visibility: 1, // VISIBILITY_PUBLIC (se muestra contenido sobre la pantalla de bloqueo)
-      sound: "siren", // referencia a res/raw/siren.ogg (sin extensión)
-      vibration: true,
-      lights: true,
-      lightColor: "#FF0000",
-    });
+    const channels = Object.values(ADMIN_CHANNELS);
+    for (const ch of channels) {
+      await PushNotifications.createChannel({
+        id: ch.id,
+        name: ch.name,
+        description: ch.description,
+        importance: 5, // IMPORTANCE_HIGH
+        visibility: 1, // VISIBILITY_PUBLIC
+        sound: ch.sound, // referencia a res/raw/<sound>.ogg
+        vibration: true,
+        lights: true,
+        lightColor: "#FF0000",
+      });
+    }
     return { ok: true };
   } catch (e) {
     console.error("ensureAdminPanicChannel failed", e);
@@ -128,6 +153,10 @@ export async function setupForegroundListeners(onAlertReceived) {
     const { PushNotifications } = await import("@capacitor/push-notifications");
     const { LocalNotifications } = await import("@capacitor/local-notifications");
 
+    if (IS_ADMIN_BUILD && getPlatform() === "android") {
+      await ensureAdminPanicChannel();
+    }
+
     await LocalNotifications.requestPermissions();
 
     const l1 = await PushNotifications.addListener("pushNotificationReceived", async (notification) => {
@@ -138,7 +167,8 @@ export async function setupForegroundListeners(onAlertReceived) {
             id: Date.now() % 2147483647,
             title: notification.title || "ÑACURUTU",
             body: notification.body || "Nueva alerta",
-            sound: "default",
+            sound: `${channelForAlertType(notification?.data?.alertType).sound}.ogg`,
+            channelId: channelForAlertType(notification?.data?.alertType).id,
             smallIcon: "ic_stat_icon_config_sample",
             extra: notification.data || {},
           }],

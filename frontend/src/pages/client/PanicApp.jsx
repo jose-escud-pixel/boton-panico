@@ -71,7 +71,8 @@ export default function PanicApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [message, setMessage] = useState("");
-  const [imageDataUrl, setImageDataUrl] = useState("");
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [audioDataUrl, setAudioDataUrl] = useState("");
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -133,6 +134,12 @@ export default function PanicApp() {
     }
   }, [loadOrg, loadHistory, logout, navigate]);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    };
+  }, [imagePreviewUrl]);
+
   // Deep link listener: cuando el servicio nativo dispara 5 presiones del
   // power button, abre la app con URL `nacurutu://panic?source=power_button`.
   // Al detectarla, disparamos pánico automáticamente.
@@ -177,7 +184,9 @@ export default function PanicApp() {
   const openDialog = (type) => {
     setActiveType(type);
     setMessage("");
-    setImageDataUrl("");
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    setImageFile(null);
+    setImagePreviewUrl("");
     setAudioDataUrl("");
     setPaused(false);
     setCountdown(type === "panic" ? COUNTDOWN_SECONDS : 0);
@@ -190,7 +199,9 @@ export default function PanicApp() {
     setCountdown(0);
     setPaused(false);
     setMessage("");
-    setImageDataUrl("");
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    setImageFile(null);
+    setImagePreviewUrl("");
     setAudioDataUrl("");
   };
 
@@ -201,11 +212,18 @@ export default function PanicApp() {
     setTimeout(() => setShake(false), 500);
     if (navigator.vibrate) navigator.vibrate([100, 50, 200]);
     try {
+      let uploadedImageUrl = null;
+      if (imageFile) {
+        const fd = new FormData();
+        fd.append("file", imageFile);
+        const { data: up } = await api.post("/uploads/image", fd);
+        uploadedImageUrl = up?.url || null;
+      }
       const location = await getLocation();
       await api.post("/alerts", {
         type: activeType,
         message: message || null,
-        image_url: imageDataUrl || null,
+        image_url: uploadedImageUrl || null,
         audio_url: audioDataUrl || null,
         location,
       });
@@ -220,7 +238,7 @@ export default function PanicApp() {
       setSending(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeType, sending, message, imageDataUrl, audioDataUrl]);
+  }, [activeType, sending, message, imageFile, audioDataUrl]);
 
   // Dispara pánico INMEDIATO sin countdown ni dialog (llamado desde deep link
   // cuando el usuario presionó 5 veces el botón de encendido).
@@ -270,13 +288,13 @@ export default function PanicApp() {
   const onPickImage = (file) => {
     pauseCountdown();
     if (!file) return;
-    if (file.size > 3 * 1024 * 1024) {
-      toast.error("Imagen demasiado grande (máx 3MB)");
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("Imagen demasiado grande (máx 50MB)");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => setImageDataUrl(ev.target.result);
-    reader.readAsDataURL(file);
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    setImageFile(file);
+    setImagePreviewUrl(URL.createObjectURL(file));
   };
 
   const startRecording = async () => {
@@ -621,12 +639,12 @@ export default function PanicApp() {
                   {/* FOTO */}
                   <label className="cursor-pointer">
                     <div className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-md text-sm border transition-colors ${
-                      imageDataUrl
+                      imagePreviewUrl
                         ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
                         : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
                     }`}>
                       <ImageIcon className="w-4 h-4" strokeWidth={1.8} />
-                      <span className="font-semibold">{imageDataUrl ? "Foto lista" : "Agregar foto"}</span>
+                      <span className="font-semibold">{imagePreviewUrl ? "Foto lista" : "Agregar foto"}</span>
                     </div>
                     <input
                       type="file"
@@ -667,11 +685,15 @@ export default function PanicApp() {
                 </div>
 
                 {/* Previews */}
-                {imageDataUrl && (
+                {imagePreviewUrl && (
                   <div className="relative">
-                    <img src={imageDataUrl} alt="preview" className="max-h-32 rounded-md border border-slate-200" />
+                    <img src={imagePreviewUrl} alt="preview" className="max-h-32 rounded-md border border-slate-200" />
                     <button
-                      onClick={() => setImageDataUrl("")}
+                      onClick={() => {
+                        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+                        setImageFile(null);
+                        setImagePreviewUrl("");
+                      }}
                       className="absolute top-1 right-1 bg-white/95 rounded-md p-1 text-slate-700 border border-slate-200"
                       type="button"
                     >

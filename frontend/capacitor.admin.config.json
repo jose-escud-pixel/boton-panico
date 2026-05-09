@@ -2,6 +2,10 @@
   "appId": "net.aranduinformatica.nacurutu.admin",
   "appName": "ÑACURUTU Seguridad Admin",
   "webDir": "build-admin",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
   "android": {
     "allowMixedContent": false,
     "captureInput": true,
@@ -11,6 +15,9 @@
     "contentInset": "always"
   },
   "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"]
     },

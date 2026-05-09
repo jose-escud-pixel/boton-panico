@@ -28,6 +28,7 @@ const TYPE_PRIORITY = {
 
 // Cada cuánto se repite la voz TTS mientras hay alertas pendientes (ms)
 const REPEAT_INTERVAL_MS = 8000;
+const FALLBACK_SYNC_MS = 8000;
 
 const AlertAudioContext = createContext(null);
 
@@ -41,6 +42,23 @@ export function AlertAudioProvider({ children }) {
   const notifPermRef = useRef("default");
   const [pushStatus, setPushStatus] = useState("idle"); // idle | enabled | denied | unsupported | error
   const [pushLoading, setPushLoading] = useState(false);
+
+  const showNotification = useCallback((alert) => {
+    if (!("Notification" in window)) return;
+    if (notifPermRef.current !== "granted" && Notification.permission !== "granted") return;
+    const phrase = PHRASES[alert.type] || "Nueva alerta";
+    try {
+      const n = new Notification(`🚨 ${phrase.toUpperCase()}`, {
+        body: `${alert.user_name} — ${alert.organization_name || ""}`,
+        tag: alert.id,
+        requireInteraction: true,
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {}
+  }, []);
 
   const startRepeatLoop = useCallback(() => {
     if (repeatIntervalRef.current) return; // ya está corriendo
@@ -62,7 +80,7 @@ export function AlertAudioProvider({ children }) {
         // Resume AudioContext (por si se suspendió en background)
         sirenManager.resume();
         // Re-asegurar que la sirena siga sonando (por si el navegador la cortó)
-        if (!sirenManager.isPlaying()) sirenManager.start();
+        if (!sirenManager.isPlaying()) sirenManager.start(best.type);
         // Chrome a veces para speechSynthesis tras ~15s — kick con resume
         try { window.speechSynthesis.resume(); } catch {}
         speak(best.phrase);
@@ -76,6 +94,47 @@ export function AlertAudioProvider({ children }) {
       repeatIntervalRef.current = null;
     }
   }, []);
+
+  const syncPendingFromServer = useCallback(async (announce = false) => {
+    if (!user || user === false || user.role === "client") return;
+    try {
+      const { data } = await api.get("/alerts?status=pending&limit=500");
+      const previousIds = new Set(pendingIdsRef.current);
+
+      pendingIdsRef.current = new Set(data.map((a) => a.id));
+      pendingAlertsRef.current.clear();
+      data.forEach((a) => {
+        pendingAlertsRef.current.set(a.id, {
+          type: a.type,
+          phrase: PHRASES[a.type] || "Alerta pendiente",
+        });
+      });
+
+      const newAlerts = data.filter((a) => !previousIds.has(a.id));
+      if (pendingAlertsRef.current.size > 0) {
+        sirenManager.resume();
+        if (!sirenManager.isPlaying()) {
+          let best = null;
+          for (const a of pendingAlertsRef.current.values()) {
+            const p = TYPE_PRIORITY[a.type] || 0;
+            if (!best || p > (TYPE_PRIORITY[best.type] || 0)) best = a;
+          }
+          sirenManager.start(best?.type || "panic");
+        }
+        if (!repeatIntervalRef.current) startRepeatLoop();
+      }
+      if (announce && newAlerts.length > 0) {
+        const first = newAlerts[0];
+        const phrase = PHRASES[first.type] || "Alerta nueva";
+        setTimeout(() => speak(phrase), 600);
+        showNotification(first);
+      }
+      if (pendingAlertsRef.current.size === 0) {
+        stopRepeatLoop();
+        if (sirenManager.isPlaying()) sirenManager.stop();
+      }
+    } catch {}
+  }, [user, showNotification, startRepeatLoop, stopRepeatLoop]);
 
   const enablePush = useCallback(async () => {
     setPushLoading(true);
@@ -126,37 +185,11 @@ export function AlertAudioProvider({ children }) {
     };
   }, [user, startRepeatLoop]);
 
-  // Carga alertas pendientes existentes Y arranca sirena si hay pendientes
-  // (si el admin abre la página con pánicos sin resolver, deben sonar igual)
+  // Carga pendientes al entrar y re-sincroniza desde backend.
   useEffect(() => {
     if (!user || user === false || user.role === "client") return;
-    (async () => {
-      try {
-        const { data } = await api.get("/alerts?status=pending&limit=500");
-        pendingIdsRef.current = new Set(data.map((a) => a.id));
-        pendingAlertsRef.current.clear();
-        data.forEach((a) => {
-          pendingAlertsRef.current.set(a.id, {
-            type: a.type,
-            phrase: PHRASES[a.type] || "Alerta pendiente",
-          });
-        });
-        if (pendingAlertsRef.current.size > 0) {
-          // Arrancar sirena + voz — AudioContext puede requerir gesto del usuario
-          // pero luego el loop mantiene todo vivo
-          sirenManager.start();
-          // Hablar de inmediato la más urgente
-          let best = null;
-          for (const a of pendingAlertsRef.current.values()) {
-            const p = TYPE_PRIORITY[a.type] || 0;
-            if (!best || p > (TYPE_PRIORITY[best.type] || 0)) best = a;
-          }
-          if (best) setTimeout(() => speak(best.phrase), 800);
-          startRepeatLoop();
-        }
-      } catch {}
-    })();
-  }, [user, startRepeatLoop]);
+    syncPendingFromServer(false);
+  }, [user, syncPendingFromServer]);
 
   // Page visibility: cuando el admin vuelve a la pestaña, si había pendientes
   // y la sirena se silenció por autoplay policy, la reanuda.
@@ -164,31 +197,35 @@ export function AlertAudioProvider({ children }) {
     if (!user || user === false || user.role === "client") return;
     const onVisibility = () => {
       if (document.visibilityState !== "visible") return;
+      syncPendingFromServer(true);
       if (pendingAlertsRef.current.size === 0) return;
       sirenManager.resume();
-      if (!sirenManager.isPlaying()) sirenManager.start();
+      if (!sirenManager.isPlaying()) {
+        let best = null;
+        for (const a of pendingAlertsRef.current.values()) {
+          const p = TYPE_PRIORITY[a.type] || 0;
+          if (!best || p > (TYPE_PRIORITY[best.type] || 0)) best = a;
+        }
+        sirenManager.start(best?.type || "panic");
+      }
       if (!repeatIntervalRef.current) startRepeatLoop();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [user, startRepeatLoop]);
+  }, [user, startRepeatLoop, syncPendingFromServer]);
 
-  const showNotification = useCallback((alert) => {
-    if (!("Notification" in window)) return;
-    if (notifPermRef.current !== "granted" && Notification.permission !== "granted") return;
-    const phrase = PHRASES[alert.type] || "Nueva alerta";
-    try {
-      const n = new Notification(`🚨 ${phrase.toUpperCase()}`, {
-        body: `${alert.user_name} — ${alert.organization_name || ""}`,
-        tag: alert.id,
-        requireInteraction: true,
-      });
-      n.onclick = () => {
-        window.focus();
-        n.close();
-      };
-    } catch {}
-  }, []);
+  // Poll de respaldo: si el websocket se cae en background, esta verificación
+  // periódica vuelve a sincronizar alertas y evita perder pánicos.
+  useEffect(() => {
+    if (!user || user === false || user.role === "client") return;
+    const tick = () => {
+      const isVisible = document.visibilityState === "visible";
+      syncPendingFromServer(isVisible);
+    };
+    tick();
+    const id = setInterval(tick, FALLBACK_SYNC_MS);
+    return () => clearInterval(id);
+  }, [user, syncPendingFromServer]);
 
   useEffect(() => {
     if (!socket) return;
@@ -199,7 +236,7 @@ export function AlertAudioProvider({ children }) {
       const phrase = PHRASES[alert.type] || "Alerta nueva";
       // Guardar info para que el loop de repetición hable el tipo más urgente
       pendingAlertsRef.current.set(alert.id, { type: alert.type, phrase });
-      sirenManager.start();
+      sirenManager.start(alert.type);
       setTimeout(() => speak(phrase), 1200);
       showNotification(alert);
       startRepeatLoop();
@@ -214,15 +251,40 @@ export function AlertAudioProvider({ children }) {
         }
       } else if (alert.status === "pending") {
         pendingIdsRef.current.add(alert.id);
+        if (!pendingAlertsRef.current.has(alert.id)) {
+          const phrase = PHRASES[alert.type] || "Alerta nueva";
+          pendingAlertsRef.current.set(alert.id, { type: alert.type, phrase });
+        }
       }
     };
+    const onConnect = () => syncPendingFromServer(false);
     socket.on("alert:new", onNew);
     socket.on("alert:updated", onUpdated);
+    socket.on("connect", onConnect);
     return () => {
       socket.off("alert:new", onNew);
       socket.off("alert:updated", onUpdated);
+      socket.off("connect", onConnect);
     };
-  }, [socket, user, showNotification, startRepeatLoop, stopRepeatLoop]);
+  }, [socket, user, showNotification, startRepeatLoop, stopRepeatLoop, syncPendingFromServer]);
+
+  useEffect(() => {
+    const onLocalStatusChanged = (event) => {
+      const id = event?.detail?.id;
+      const status = event?.detail?.status;
+      if (!id) return;
+      if (status && status !== "pending") {
+        pendingIdsRef.current.delete(id);
+        pendingAlertsRef.current.delete(id);
+        if (pendingIdsRef.current.size === 0) {
+          stopRepeatLoop();
+          if (sirenManager.isPlaying()) sirenManager.stop();
+        }
+      }
+    };
+    window.addEventListener("nacurutu:alert-status-changed", onLocalStatusChanged);
+    return () => window.removeEventListener("nacurutu:alert-status-changed", onLocalStatusChanged);
+  }, [stopRepeatLoop]);
 
   const silence = useCallback(() => {
     sirenManager.stop();

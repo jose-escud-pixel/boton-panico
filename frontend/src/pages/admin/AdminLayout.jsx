@@ -9,6 +9,7 @@ import {
   Siren,
   Users,
   Building2,
+  Activity,
   LogOut,
   Menu,
   Radio,
@@ -24,11 +25,36 @@ import VersionBadge from "../../components/VersionBadge";
 import ChangePasswordDialog from "../../components/ChangePasswordDialog";
 
 const navItems = [
-  { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard", test: "nav-dashboard" },
-  { to: "/admin/alerts", icon: Siren, label: "Alertas", test: "nav-alerts" },
-  { to: "/admin/users", icon: Users, label: "Usuarios", test: "nav-users" },
-  { to: "/admin/organizations", icon: Building2, label: "Organizaciones", test: "nav-organizations" },
+  { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard", test: "nav-dashboard", module: "dashboard" },
+  { to: "/admin/alerts", icon: Siren, label: "Alertas", test: "nav-alerts", module: "alerts" },
+  { to: "/admin/users", icon: Users, label: "Usuarios", test: "nav-users", module: "users" },
+  { to: "/admin/online-users", icon: Activity, label: "En línea", test: "nav-online-users", module: "online_users" },
+  { to: "/admin/organizations", icon: Building2, label: "Organizaciones", test: "nav-organizations", module: "organizations" },
 ];
+
+function JarLogoCorner() {
+  return (
+    <div className="flex items-center gap-2" title="JAR Informática">
+      <svg viewBox="0 0 100 120" width="28" height="34" aria-label="JAR" className="shrink-0">
+        <defs>
+          <linearGradient id="jarGlobalGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#f87171" />
+            <stop offset="100%" stopColor="#dc2626" />
+          </linearGradient>
+        </defs>
+        <rect x="20" y="5" width="60" height="110" rx="20" ry="20" fill="url(#jarGlobalGrad)" />
+        <rect x="35" y="20" width="30" height="38" rx="4" fill="none" stroke="white" strokeWidth="3.5" />
+        <circle cx="41" cy="26" r="1.5" fill="white" />
+        <rect x="35" y="62" width="30" height="38" rx="4" fill="none" stroke="white" strokeWidth="3.5" />
+        <circle cx="41" cy="68" r="1.5" fill="white" />
+      </svg>
+      <div className="leading-tight">
+        <div className="font-black tracking-wide text-[0.8rem] text-blue-700 dark:text-blue-300">JAR</div>
+        <div className="text-[0.58rem] tracking-[0.15em] text-slate-600 dark:text-slate-400 uppercase">Informática</div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
@@ -39,6 +65,15 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
+
+  const canViewModule = (module) => {
+    if (!user) return false;
+    if (user.role === "super_admin" || user.is_owner) return true;
+    if (user.role !== "admin") return false;
+    const p = user.permissions || {};
+    if (typeof p.view === "boolean") return p.view; // legacy flat
+    return !!p?.[module]?.view;
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -93,7 +128,7 @@ export default function AdminLayout() {
               </select>
             </div>
           )}
-          {navItems.map((item) => (
+          {navItems.filter((item) => canViewModule(item.module)).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -187,6 +222,13 @@ export default function AdminLayout() {
         </header>
 
         <main className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-950">
+          <div className="sticky top-0 z-10 pointer-events-none">
+            <div className="flex justify-end p-3 md:p-4">
+              <div className="pointer-events-auto bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 shadow-sm backdrop-blur">
+                <JarLogoCorner />
+              </div>
+            </div>
+          </div>
           <Outlet />
         </main>
       </div>

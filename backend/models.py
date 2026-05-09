@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Literal
 import uuid
 
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, model_validator
 
 
 def utc_now_iso() -> str:
@@ -37,18 +37,58 @@ UserStatus = Literal["active", "disabled"]
 AccessType = Literal["permanent", "annual", "custom"]
 
 
-class Permissions(BaseModel):
+class CrudPermissions(BaseModel):
+    view: bool = False
     create: bool = False
     edit: bool = False
     delete: bool = False
-    view: bool = True
+
+
+class Permissions(BaseModel):
+    """Permisos granulares por módulo.
+
+    Compatibilidad legacy:
+    - Si llega payload viejo con {view,create,edit,delete} a nivel raíz,
+      se replica en todos los módulos.
+    """
+    dashboard: CrudPermissions = Field(default_factory=lambda: CrudPermissions(view=True))
+    alerts: CrudPermissions = Field(default_factory=lambda: CrudPermissions(view=True))
+    users: CrudPermissions = Field(default_factory=CrudPermissions)
+    organizations: CrudPermissions = Field(default_factory=CrudPermissions)
+    online_users: CrudPermissions = Field(default_factory=CrudPermissions)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_flat_permissions(cls, value):
+        if not isinstance(value, dict):
+            return value
+        has_modules = any(
+            k in value for k in ("dashboard", "alerts", "users", "organizations", "online_users")
+        )
+        if has_modules:
+            return value
+        if any(k in value for k in ("view", "create", "edit", "delete")):
+            flat = {
+                "view": bool(value.get("view", False)),
+                "create": bool(value.get("create", False)),
+                "edit": bool(value.get("edit", False)),
+                "delete": bool(value.get("delete", False)),
+            }
+            return {
+                "dashboard": {"view": flat["view"], "create": False, "edit": False, "delete": False},
+                "alerts": dict(flat),
+                "users": dict(flat),
+                "organizations": dict(flat),
+                "online_users": {"view": flat["view"], "create": False, "edit": False, "delete": False},
+            }
+        return value
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
     password: str
     name: str
-    username: Optional[str] = None
+    username: str
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     phone: Optional[str] = None
@@ -97,7 +137,7 @@ class DeviceBind(BaseModel):
 class UserPublic(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     name: str
     username: Optional[str] = None
     first_name: Optional[str] = None
@@ -173,6 +213,7 @@ class Alert(BaseModel):
     user_id: str
     user_name: Optional[str] = None
     user_email: Optional[str] = None
+    user_phone: Optional[str] = None
     organization_id: str
     organization_name: Optional[str] = None
     type: AlertType

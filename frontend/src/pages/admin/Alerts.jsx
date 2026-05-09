@@ -19,8 +19,8 @@ import { Label } from "../../components/ui/label";
 import { formatDistanceToNow, format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  Eye, MapPin, Image as ImageIcon, Volume2, Clock,
-  Siren, Flame, HeartPulse, Wrench, AlertTriangle, Archive, Trash2,
+  MapPin, Image as ImageIcon, Volume2, Clock,
+  Siren, Flame, HeartPulse, Wrench, AlertTriangle, Archive, Trash2, Copy, PhoneCall,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
@@ -74,6 +74,16 @@ export default function Alerts() {
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const { socket } = useSocket();
+
+  const copyText = useCallback(async (value, label = "Copiado") => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(String(value));
+      toast.success(label);
+    } catch {
+      toast.error("No se pudo copiar");
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,6 +170,12 @@ export default function Alerts() {
     try {
       const { data } = await api.patch(`/alerts/${selected.id}/status`, { status });
       setSelected(data);
+      // Feedback inmediato local para que la sirena se corte sin esperar socket/poll.
+      window.dispatchEvent(
+        new CustomEvent("nacurutu:alert-status-changed", {
+          detail: { id: selected.id, status },
+        })
+      );
       toast.success(`Estado actualizado a ${STATUS_LABEL[status]}`);
       load();
     } catch {
@@ -270,7 +286,7 @@ export default function Alerts() {
                 <TableHead className="overline text-slate-500">Tipo</TableHead>
                 <TableHead className="overline text-slate-500">Estado</TableHead>
                 <TableHead className="overline text-slate-500">Hora</TableHead>
-                <TableHead className="overline text-slate-500">Acción</TableHead>
+                <TableHead className="overline text-slate-500">Teléfono</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -305,16 +321,29 @@ export default function Alerts() {
                     <TableCell className="text-slate-500 text-xs font-mono-tactical">
                       {formatDistanceToNow(new Date(a.timestamp), { addSuffix: true, locale: es })}
                     </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-slate-500 hover:text-slate-900"
-                        onClick={(e) => { e.stopPropagation(); setSelected(a); }}
-                        data-testid="view-alert-button"
-                      >
-                        <Eye className="w-4 h-4" strokeWidth={1.8} />
-                      </Button>
+                    <TableCell className="text-slate-700 text-sm font-mono-tactical">
+                      {a.user_phone ? (
+                        <div className="flex items-center gap-1.5">
+                          <a
+                            href={`tel:${String(a.user_phone).replace(/\s+/g, "")}`}
+                            className="hover:underline text-slate-700"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {a.user_phone}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyText(a.user_phone, "Teléfono copiado");
+                            }}
+                            className="text-slate-400 hover:text-slate-700"
+                            title="Copiar teléfono"
+                          >
+                            <Copy className="w-3.5 h-3.5" strokeWidth={2} />
+                          </button>
+                        </div>
+                      ) : "—"}
                     </TableCell>
                   </TableRow>
                 );
@@ -349,6 +378,30 @@ export default function Alerts() {
                 </DialogHeader>
 
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                  {selected.user_phone && (
+                    <div>
+                      <p className="overline mb-1">Teléfono</p>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`tel:${String(selected.user_phone).replace(/\s+/g, "")}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-sm font-mono-tactical"
+                        >
+                          <PhoneCall className="w-3.5 h-3.5" strokeWidth={2} />
+                          {selected.user_phone}
+                        </a>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-md"
+                          onClick={() => copyText(selected.user_phone, "Teléfono copiado")}
+                        >
+                          <Copy className="w-3.5 h-3.5 mr-1" strokeWidth={2} />
+                          Copiar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   {selected.message && (
                     <div>
                       <p className="overline mb-1">Mensaje</p>
@@ -380,6 +433,22 @@ export default function Alerts() {
                       <p className="text-xs text-slate-500 mt-1 font-mono-tactical">
                         {selected.location.coordinates[1].toFixed(5)}, {selected.location.coordinates[0].toFixed(5)}
                       </p>
+                      <div className="mt-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-md"
+                          onClick={() =>
+                            copyText(
+                              `https://www.google.com/maps?q=${selected.location.coordinates[1]},${selected.location.coordinates[0]}`,
+                              "Enlace de Google Maps copiado"
+                            )
+                          }
+                        >
+                          <Copy className="w-3.5 h-3.5 mr-1" strokeWidth={2} />
+                          Copiar enlace Maps
+                        </Button>
+                      </div>
                     </div>
                   )}
 

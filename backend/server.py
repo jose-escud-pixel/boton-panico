@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import socketio
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query, Body, UploadFile, File
+from fastapi.responses import FileResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -51,6 +52,11 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("nacurutu")
+UPLOAD_MAX_IMAGE_BYTES = 50 * 1024 * 1024  # 50MB
+UPLOAD_DIR = ROOT_DIR / "uploads" / "alerts"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ONLINE_USERS = {}  # user_id -> dict(info)
+SID_TO_USER = {}   # sid -> user_id
 
 # ---------- MongoDB ----------
 mongo_url = os.environ["MONGO_URL"]
@@ -82,6 +88,7 @@ async def connect(sid, environ, auth):
         return False
     role = payload.get("role")
     org_id = payload.get("organization_id")
+    user_id = payload.get("sub")
     # Join organization room for admins; super_admin joins all
     if role == "super_admin":
         await sio.enter_room(sid, "super_admin")
@@ -93,12 +100,32 @@ async def connect(sid, environ, auth):
     else:
         if org_id:
             await sio.enter_room(sid, f"org:{org_id}")
+    db_user = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0}) if user_id else None
+    now = datetime.now(timezone.utc).isoformat()
+    if user_id:
+        ONLINE_USERS[user_id] = {
+            "user_id": user_id,
+            "sid": sid,
+            "connected_at": now,
+            "last_seen_at": now,
+            "role": role,
+            "organization_id": org_id,
+            "name": (db_user or {}).get("name"),
+            "email": (db_user or {}).get("email"),
+            "phone": (db_user or {}).get("phone"),
+        }
+        SID_TO_USER[sid] = user_id
     logger.info(f"Socket {sid} connected as {role} org={org_id}")
     return True
 
 
 @sio.event
 async def disconnect(sid):
+    uid = SID_TO_USER.pop(sid, None)
+    if uid:
+        info = ONLINE_USERS.get(uid)
+        if info and info.get("sid") == sid:
+            ONLINE_USERS.pop(uid, None)
     logger.info(f"Socket {sid} disconnected")
 
 
@@ -110,7 +137,7 @@ api = APIRouter(prefix="/api")
 # ---------- Startup ----------
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("email", unique=True)
+    await db.users.create_index("email", unique=True, sparse=True)
     await db.organizations.create_index("name")
     await db.alerts.create_index("organization_id")
     await db.alerts.create_index("timestamp")
@@ -151,6 +178,38 @@ async def require_super_admin(user: dict = Depends(get_current_user)):
     return user
 
 
+def _has_permission(user: dict, module: str, action: str) -> bool:
+    role = user.get("role")
+    if role == "super_admin" or _is_owner(user):
+        return True
+    if role != "admin":
+        return False
+    p = user.get("permissions") or {}
+    # Compatibilidad legacy: permisos planos aplican globalmente.
+    if isinstance(p, dict) and action in p and isinstance(p.get(action), bool):
+        return bool(p.get(action))
+    module_perms = (p.get(module) or {}) if isinstance(p, dict) else {}
+    return bool(module_perms.get(action))
+
+
+def _client_permissions() -> dict:
+    return {
+        "dashboard": {"view": False, "create": False, "edit": False, "delete": False},
+        "alerts": {"view": False, "create": False, "edit": False, "delete": False},
+        "users": {"view": False, "create": False, "edit": False, "delete": False},
+        "organizations": {"view": False, "create": False, "edit": False, "delete": False},
+        "online_users": {"view": False, "create": False, "edit": False, "delete": False},
+    }
+
+
+def require_admin_permission(module: str, action: str):
+    async def checker(user: dict = Depends(require_admin)):
+        if not _has_permission(user, module, action):
+            raise HTTPException(status_code=403, detail=f"Sin permiso: {module}.{action}")
+        return user
+    return checker
+
+
 # ---------- Utils ----------
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     response.set_cookie(
@@ -186,14 +245,18 @@ _version_cache = {"build": None, "ts": 0}
 
 def _is_owner(user: dict) -> bool:
     """El usuario 'owner' es el super_admin cuyo email coincide con
-    la variable de entorno SUPER_ADMIN_EMAIL. Este usuario tiene potestad
+    la variable de entorno SUPER_ADMIN_EMAIL o cuyo username coincide
+    con SUPER_ADMIN_USERNAME. Este usuario tiene potestad
     sobre TODOS los demás usuarios (incluso otros super_admin), excepto
     sobre sí mismo (no puede eliminarse ni bajarse el rol).
     """
     owner_email = (os.environ.get("SUPER_ADMIN_EMAIL") or "").strip().lower()
-    if not owner_email:
-        return False
-    return (user.get("email") or "").strip().lower() == owner_email
+    owner_username = (os.environ.get("SUPER_ADMIN_USERNAME") or "jose").strip().lower()
+    user_email = (user.get("email") or "").strip().lower()
+    user_username = (user.get("username") or "").strip().lower()
+    return (owner_email and user_email == owner_email) or (
+        owner_username and user_username == owner_username
+    )
 
 
 def _get_required_app_build() -> Optional[int]:
@@ -273,6 +336,8 @@ async def device_bind(payload: DeviceBind, user: dict = Depends(get_current_user
 async def unbind_device(user_id: str, user: dict = Depends(require_admin)):
     """Admin/Super Admin libera el device binding de un usuario (para que pueda
     loguearse desde un teléfono nuevo tras cambio de celular o similar)."""
+    if not _has_permission(user, "users", "edit"):
+        raise HTTPException(status_code=403, detail="Sin permiso: users.edit")
     target = await db.users.find_one({"id": user_id})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -368,13 +433,18 @@ async def login(payload: LoginRequest, request: Request, response: Response):
             )
 
     access_token = create_access_token(
-        user["id"], user["email"], user["role"], user.get("organization_id")
+        user["id"], user.get("email") or user.get("username"), user["role"], user.get("organization_id")
     )
     refresh_token = create_refresh_token(user["id"])
     set_auth_cookies(response, access_token, refresh_token)
     public = strip_sensitive(user)
     public["is_owner"] = _is_owner(public)
-    return {"user": public, "access_token": access_token}
+    return {
+        "user": public,
+        "access_token": access_token,
+        # Se retorna también para clientes nativos que no dependen de cookies.
+        "refresh_token": refresh_token,
+    }
 
 
 @api.get("/auth/me")
@@ -394,8 +464,18 @@ async def logout(response: Response):
 
 
 @api.post("/auth/refresh")
-async def refresh(request: Request, response: Response):
+async def refresh(
+    request: Request,
+    response: Response,
+    payload: Optional[dict] = Body(None),
+):
     token = request.cookies.get("refresh_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        token = (payload or {}).get("refresh_token")
     if not token:
         raise HTTPException(status_code=401, detail="No refresh token")
     payload = decode_token(token)
@@ -405,11 +485,18 @@ async def refresh(request: Request, response: Response):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     access_token = create_access_token(
-        user["id"], user["email"], user["role"], user.get("organization_id")
+        user["id"], user.get("email") or user.get("username"), user["role"], user.get("organization_id")
     )
     new_refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access_token, new_refresh)
-    return {"ok": True}
+    public = strip_sensitive(dict(user))
+    public["is_owner"] = _is_owner(public)
+    return {
+        "ok": True,
+        "user": public,
+        "access_token": access_token,
+        "refresh_token": new_refresh,
+    }
 
 
 @api.post("/auth/change-password")
@@ -438,6 +525,8 @@ async def change_password(
 # ======================================================
 @api.get("/organizations")
 async def list_orgs(user: dict = Depends(get_current_user)):
+    if user["role"] == "admin" and not _has_permission(user, "organizations", "view"):
+        raise HTTPException(status_code=403, detail="Sin permiso: organizations.view")
     if user["role"] == "super_admin":
         orgs = await db.organizations.find({}, {"_id": 0}).to_list(1000)
     else:
@@ -464,6 +553,8 @@ async def create_org(payload: OrganizationCreate, user: dict = Depends(require_s
 async def update_org(
     org_id: str, payload: OrganizationUpdate, user: dict = Depends(require_admin)
 ):
+    if user["role"] == "admin" and not _has_permission(user, "organizations", "edit"):
+        raise HTTPException(status_code=403, detail="Sin permiso: organizations.edit")
     if user["role"] == "admin" and user.get("organization_id") != org_id:
         raise HTTPException(status_code=403, detail="Cannot edit another organization")
     update = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
@@ -489,6 +580,8 @@ async def delete_org(org_id: str, user: dict = Depends(require_super_admin)):
 # ======================================================
 @api.get("/users")
 async def list_users(user: dict = Depends(require_admin)):
+    if not _has_permission(user, "users", "view"):
+        raise HTTPException(status_code=403, detail="Sin permiso: users.view")
     if user["role"] == "super_admin":
         users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     else:
@@ -499,17 +592,47 @@ async def list_users(user: dict = Depends(require_admin)):
     return users
 
 
+@api.get("/users/online")
+async def list_online_users(user: dict = Depends(require_admin)):
+    if not _has_permission(user, "online_users", "view"):
+        raise HTTPException(status_code=403, detail="Sin permiso: online_users.view")
+
+    if user["role"] == "super_admin":
+        base_query = {}
+    else:
+        base_query = {"organization_id": user.get("organization_id")}
+
+    users = await db.users.find(base_query, {"_id": 0, "password_hash": 0}).to_list(2000)
+    org_ids = [u.get("organization_id") for u in users if u.get("organization_id")]
+    org_docs = await db.organizations.find({"id": {"$in": org_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(2000)
+    org_map = {o["id"]: o.get("name") for o in org_docs}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    out = []
+    for u in users:
+        online = ONLINE_USERS.get(u["id"])
+        item = dict(u)
+        item["organization_name"] = org_map.get(u.get("organization_id"))
+        item["is_online"] = bool(online)
+        item["online_connected_at"] = online.get("connected_at") if online else None
+        item["online_last_seen_at"] = online.get("last_seen_at") if online else None
+        item["snapshot_at"] = now_iso
+        out.append(item)
+    return out
+
+
 @api.post("/users")
 async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
-    email = payload.email.lower()
-    if await db.users.find_one({"email": email}):
+    if not _has_permission(user, "users", "create"):
+        raise HTTPException(status_code=403, detail="Sin permiso: users.create")
+    email = payload.email.lower() if payload.email else None
+    if email and await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already in use")
-    # Validar username único si se proporciona
-    username = None
-    if payload.username:
-        username = payload.username.strip().lower()
-        if username and await db.users.find_one({"username": username}):
-            raise HTTPException(status_code=400, detail="Nombre de usuario ya existe")
+    # Username obligatorio y único
+    username = (payload.username or "").strip().lower()
+    if not username:
+        raise HTTPException(status_code=400, detail="Nombre de usuario requerido")
+    if await db.users.find_one({"username": username}):
+        raise HTTPException(status_code=400, detail="Nombre de usuario ya existe")
     if user["role"] == "admin" and payload.organization_id != user.get("organization_id"):
         raise HTTPException(status_code=403, detail="Cannot assign to another org")
     # Only super_admin can create super_admin or admin
@@ -533,6 +656,8 @@ async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
         "access_start": payload.access_start,
         "access_end": payload.access_end,
     }
+    if payload.role == "client":
+        doc["permissions"] = _client_permissions()
     await db.users.insert_one(dict(doc))
     doc.pop("_id", None)
     doc.pop("password_hash", None)
@@ -541,6 +666,8 @@ async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
 
 @api.put("/users/{user_id}")
 async def update_user(user_id: str, payload: UserUpdate, user: dict = Depends(require_admin)):
+    if not _has_permission(user, "users", "edit"):
+        raise HTTPException(status_code=403, detail="Sin permiso: users.edit")
     target = await db.users.find_one({"id": user_id})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -594,6 +721,10 @@ async def update_user(user_id: str, payload: UserUpdate, user: dict = Depends(re
     for k, v in data.items():
         if v is not None:
             update[k] = v
+    # Cliente: no se guardan permisos administrativos.
+    final_role = update.get("role", target.get("role"))
+    if final_role == "client":
+        update["permissions"] = _client_permissions()
     if not update:
         raise HTTPException(status_code=400, detail="No fields to update")
     await db.users.update_one({"id": user_id}, {"$set": update})
@@ -603,6 +734,8 @@ async def update_user(user_id: str, payload: UserUpdate, user: dict = Depends(re
 
 @api.delete("/users/{user_id}")
 async def delete_user(user_id: str, user: dict = Depends(require_admin)):
+    if not _has_permission(user, "users", "delete"):
+        raise HTTPException(status_code=403, detail="Sin permiso: users.delete")
     target = await db.users.find_one({"id": user_id})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -634,6 +767,7 @@ async def create_alert(payload: AlertCreate, user: dict = Depends(get_current_us
         "user_id": user["id"],
         "user_name": user.get("name"),
         "user_email": user.get("email"),
+        "user_phone": user.get("phone"),
         "organization_id": org_id,
         "organization_name": org["name"] if org else None,
         "type": payload.type,
@@ -666,6 +800,55 @@ async def create_alert(payload: AlertCreate, user: dict = Depends(get_current_us
     return alert
 
 
+@api.post("/uploads/image")
+async def upload_alert_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    _ = user  # autenticación requerida
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Solo se permiten imágenes")
+
+    ext = Path(file.filename or "").suffix.lower() or ".jpg"
+    stored_name = f"{uuid.uuid4()}{ext}"
+    stored_path = UPLOAD_DIR / stored_name
+
+    size = 0
+    try:
+        with stored_path.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > UPLOAD_MAX_IMAGE_BYTES:
+                    raise HTTPException(status_code=413, detail="Imagen demasiado grande (máx 50MB)")
+                out.write(chunk)
+    except HTTPException:
+        stored_path.unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar la imagen: {e}")
+    finally:
+        await file.close()
+
+    base_path = os.environ.get("PUBLIC_BASE_PATH", "/boton-panico").rstrip("/")
+    if not base_path.startswith("/"):
+        base_path = "/" + base_path
+    return {"url": f"{base_path}/api/uploads/alerts/{stored_name}", "size": size}
+
+
+@api.get("/uploads/alerts/{filename}")
+async def get_uploaded_alert_image(filename: str):
+    safe = Path(filename).name
+    path = UPLOAD_DIR / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Imagen no encontrada")
+    return FileResponse(str(path))
+
+
 @api.get("/alerts")
 async def list_alerts(
     user: dict = Depends(get_current_user),
@@ -678,6 +861,8 @@ async def list_alerts(
     archived: Optional[bool] = None,
     limit: int = Query(200, le=1000),
 ):
+    if user["role"] == "admin" and not _has_permission(user, "alerts", "view"):
+        raise HTTPException(status_code=403, detail="Sin permiso: alerts.view")
     q = {}
     if user["role"] == "super_admin":
         if organization_id:
@@ -731,6 +916,8 @@ async def get_alert(alert_id: str, user: dict = Depends(get_current_user)):
 async def update_alert_status(
     alert_id: str, payload: AlertStatusUpdate, user: dict = Depends(require_admin)
 ):
+    if not _has_permission(user, "alerts", "edit"):
+        raise HTTPException(status_code=403, detail="Sin permiso: alerts.edit")
     alert = await db.alerts.find_one({"id": alert_id})
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -763,6 +950,8 @@ async def archive_alerts(
     Las alertas archivadas no aparecen en el listado normal pero sí en el
     historial (pasando archived=true en GET /alerts).
     """
+    if not _has_permission(user, "alerts", "delete"):
+        raise HTTPException(status_code=403, detail="Sin permiso: alerts.delete")
     q = {"archived": {"$ne": True}}
     if only_completed:
         q["status"] = "completed"
@@ -789,6 +978,8 @@ async def archive_alerts(
 # ======================================================
 @api.get("/dashboard/stats")
 async def dashboard_stats(user: dict = Depends(require_admin)):
+    if not _has_permission(user, "dashboard", "view"):
+        raise HTTPException(status_code=403, detail="Sin permiso: dashboard.view")
     base_q = {}
     if user["role"] == "admin":
         base_q["organization_id"] = user.get("organization_id")

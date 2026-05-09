@@ -42,6 +42,18 @@ PHRASE_MAP = {
     "normal": "Alerta nueva",
 }
 
+# Sonidos/canales por tipo de alerta para Android.
+# IMPORTANTE: en Android el sonido se define por canal, no por notificación.
+ANDROID_ALERT_SOUND = {
+    "panic": {"channel_id": "nacurutu_admin_police_v2", "sound": "police"},
+    "silent": {"channel_id": "nacurutu_admin_police_v2", "sound": "police"},
+    "normal": {"channel_id": "nacurutu_admin_police_v2", "sound": "police"},
+    "fire": {"channel_id": "nacurutu_admin_fire_v2", "sound": "firetruck"},
+    "medical": {"channel_id": "nacurutu_admin_ambulance_v2", "sound": "ambulance"},
+    "on_way": {"channel_id": "nacurutu_admin_police_v2", "sound": "police"},
+    "here": {"channel_id": "nacurutu_admin_police_v2", "sound": "police"},
+}
+
 _firebase_initialized = False
 
 
@@ -153,9 +165,11 @@ async def _send_fcm_to_admins(db, alert: dict):
     title = f"🚨 {phrase.upper()}"
     body = f"{alert.get('user_name', 'Usuario')} — {alert.get('organization_name') or ''}"
 
-    # Canal dedicado para admins — sirena custom + bypassDnd + full-screen intent.
-    # El archivo de sonido debe existir en android/app/src/main/res/raw/siren.ogg
-    # El canal se crea automáticamente desde la app al primer mensaje.
+    android_sound_cfg = ANDROID_ALERT_SOUND.get(
+        alert.get("type"), {"channel_id": "nacurutu_admin_police_v2", "sound": "police"}
+    )
+
+    # Canal por tipo de alerta. El canal/sound debe existir en la app Android.
     message = messaging.MulticastMessage(
         tokens=admin_tokens,
         notification=messaging.Notification(title=title, body=body),
@@ -169,8 +183,8 @@ async def _send_fcm_to_admins(db, alert: dict):
         android=messaging.AndroidConfig(
             priority="high",
             notification=messaging.AndroidNotification(
-                sound="siren",  # busca android/app/src/main/res/raw/siren.ogg
-                channel_id="nacurutu_admin_panic",
+                sound=android_sound_cfg["sound"],
+                channel_id=android_sound_cfg["channel_id"],
                 default_vibrate_timings=False,
                 vibrate_timings_millis=[0, 500, 200, 500, 200, 500],
                 visibility="public",

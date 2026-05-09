@@ -11,6 +11,20 @@ class SirenManager {
     this.nodes = null;
   }
 
+  _presetByType(type) {
+    // Perfiles sintéticos para web (sin assets).
+    // panic/silent/normal/on_way/here -> estilo policial (base).
+    // fire -> barrido más grave/lento (tipo bomberos).
+    // medical -> barrido más agudo/rápido (tipo ambulancia).
+    if (type === "fire") {
+      return { baseFreq: 580, lfoFreq: 0.72, sweep: 220, gain: 0.12 };
+    }
+    if (type === "medical") {
+      return { baseFreq: 900, lfoFreq: 1.8, sweep: 180, gain: 0.10 };
+    }
+    return { baseFreq: 760, lfoFreq: 1.1, sweep: 260, gain: 0.10 };
+  }
+
   _ensureCtx() {
     if (!this.ctx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -34,25 +48,26 @@ class SirenManager {
     }
   }
 
-  start() {
+  start(type = "panic") {
     if (this.playing) return;
     const ctx = this._ensureCtx();
     if (!ctx) return;
 
     try {
+      const preset = this._presetByType(type);
       const osc = ctx.createOscillator();
       osc.type = "sawtooth";
-      osc.frequency.value = 750;
+      osc.frequency.value = preset.baseFreq;
 
       const gain = ctx.createGain();
-      gain.gain.value = 0.10;
+      gain.gain.value = preset.gain;
 
       // LFO para barrido tipo sirena
       const lfo = ctx.createOscillator();
       lfo.type = "sine";
-      lfo.frequency.value = 1.1;
+      lfo.frequency.value = preset.lfoFreq;
       const lfoGain = ctx.createGain();
-      lfoGain.gain.value = 260;
+      lfoGain.gain.value = preset.sweep;
       lfo.connect(lfoGain);
       lfoGain.connect(osc.frequency);
 

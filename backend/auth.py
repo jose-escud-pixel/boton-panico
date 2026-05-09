@@ -26,10 +26,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str, role: str, organization_id: Optional[str]) -> str:
+def create_access_token(user_id: str, email: Optional[str], role: str, organization_id: Optional[str]) -> str:
     payload = {
         "sub": user_id,
-        "email": email,
+        "email": email or "",
         "role": role,
         "organization_id": organization_id,
         "exp": datetime.now(timezone.utc) + timedelta(hours=12),

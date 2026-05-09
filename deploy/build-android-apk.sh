@@ -175,13 +175,26 @@ if ! grep -q "APP_BUILD = $NEW_CODE;" "$APP_VERSION_JS"; then
 fi
 
 # ---------- Paso 4: Build del frontend React ----------
-log "Paso 4 — Compilando frontend React..."
-cd "$FRONTEND_DIR"
-yarn install
-# ---------- Paso 4: Build del frontend React ----------
 log "Paso 4 — Compilando frontend React (mode=$BUILD_MODE)..."
 cd "$FRONTEND_DIR"
 yarn install
+
+# CRA embebe REACT_APP_* en el JS. Las APK (Capacitor) necesitan URL absoluta del API;
+# si falta REACT_APP_BACKEND_URL, axios usa /boton-panico/api → capacitor:// y el login falla
+# con "Ocurrió un error" sin detalle del backend.
+ENV_PROD="$FRONTEND_DIR/.env.production"
+if [ -f "$ENV_PROD" ]; then
+    log "   → Cargando REACT_APP_* desde .env.production"
+    set -a
+    # shellcheck disable=SC1091
+    . "$ENV_PROD"
+    set +a
+fi
+if [ -z "${REACT_APP_BACKEND_URL:-}" ]; then
+    err "Falta REACT_APP_BACKEND_URL. Creá $ENV_PROD (ver deploy/INSTALACION.md) o exportá la variable antes de correr este script."
+    exit 1
+fi
+log "   → API embebido: ${REACT_APP_BACKEND_URL}${REACT_APP_BASE_PATH:-}/api"
 
 # Copiar el config de Capacitor correcto según el modo a la ubicación estándar
 # que yarn cap espera (capacitor.config.json en la raíz del frontend).
@@ -383,16 +396,40 @@ else
     fi
 fi
 
-# ---------- Paso 7f: Copiar siren.ogg a res/raw (sólo build admin) ----------
+# ---------- Paso 7f: Copiar sonidos de alerta a res/raw (sólo build admin) ----------
 if [ "$BUILD_MODE" = "admin" ]; then
-    SIREN_SRC="$PROJECT_ROOT/deploy/assets/siren.ogg"
     RES_RAW_DIR="$ANDROID_DIR/app/src/main/res/raw"
-    if [ -f "$SIREN_SRC" ]; then
-        mkdir -p "$RES_RAW_DIR"
-        cp "$SIREN_SRC" "$RES_RAW_DIR/siren.ogg"
-        log "Paso 7f — siren.ogg copiada a res/raw (modo admin)"
-    else
-        warn "Paso 7f — No se encontró $SIREN_SRC. El push admin no tendrá sonido custom."
+    mkdir -p "$RES_RAW_DIR"
+    # Se esperan estos archivos:
+    #   deploy/assets/police.ogg
+    #   deploy/assets/firetruck.ogg
+    #   deploy/assets/ambulance.ogg
+    # Si faltan, se usa fallback a siren.ogg (si existe) para evitar canal mudo.
+    FALLBACK_SIREN="$PROJECT_ROOT/deploy/assets/siren.ogg"
+    declare -a ALERT_SOUNDS=("police" "firetruck" "ambulance")
+    for SND in "${ALERT_SOUNDS[@]}"; do
+        SRC="$PROJECT_ROOT/deploy/assets/${SND}.ogg"
+        if [ -f "$SRC" ]; then
+            cp "$SRC" "$RES_RAW_DIR/${SND}.ogg"
+            log "Paso 7f — ${SND}.ogg copiada a res/raw"
+        elif [ -f "$FALLBACK_SIREN" ]; then
+            cp "$FALLBACK_SIREN" "$RES_RAW_DIR/${SND}.ogg"
+            warn "Paso 7f — faltó ${SND}.ogg, se usó fallback siren.ogg"
+        else
+            warn "Paso 7f — no existe ${SND}.ogg ni fallback siren.ogg (canal puede quedar silencioso)"
+        fi
+    done
+    # Validación estricta: sin sonidos en res/raw, Android puede quedar mudo.
+    MISSING=0
+    for SND in "${ALERT_SOUNDS[@]}"; do
+        if [ ! -f "$RES_RAW_DIR/${SND}.ogg" ]; then
+            err "Paso 7f — falta $RES_RAW_DIR/${SND}.ogg"
+            MISSING=1
+        fi
+    done
+    if [ "$MISSING" -eq 1 ]; then
+        err "No se pudo preparar los sonidos de alerta. Abortando build admin para evitar APK sin audio."
+        exit 1
     fi
 fi
 

@@ -40,6 +40,81 @@ const ROLE_STYLE = {
   client: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
+const PERMISSION_MODULES = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "alerts", label: "Alertas" },
+  { key: "users", label: "Usuarios" },
+  { key: "organizations", label: "Organizaciones" },
+  { key: "online_users", label: "Usuarios en línea" },
+];
+const PERMISSION_ACTIONS = ["view", "create", "edit", "delete"];
+
+function emptyCrud(viewDefault = false) {
+  return { view: !!viewDefault, create: false, edit: false, delete: false };
+}
+
+function defaultAdminPermissions() {
+  return {
+    dashboard: emptyCrud(true),
+    alerts: emptyCrud(true),
+    users: emptyCrud(false),
+    organizations: emptyCrud(false),
+    online_users: emptyCrud(false),
+  };
+}
+
+function defaultClientPermissions() {
+  return {
+    dashboard: emptyCrud(false),
+    alerts: emptyCrud(false),
+    users: emptyCrud(false),
+    organizations: emptyCrud(false),
+    online_users: emptyCrud(false),
+  };
+}
+
+function defaultSuperAdminPermissions() {
+  return PERMISSION_MODULES.reduce((acc, m) => {
+    acc[m.key] = { view: true, create: true, edit: true, delete: true };
+    return acc;
+  }, {});
+}
+
+function normalizePermissions(perms, role) {
+  if (role === "client") return defaultClientPermissions();
+  if (role === "super_admin") return defaultSuperAdminPermissions();
+  const p = perms || {};
+  const hasModules = PERMISSION_MODULES.some((m) => p[m.key]);
+  if (hasModules) {
+    const out = defaultAdminPermissions();
+    PERMISSION_MODULES.forEach((m) => {
+      const src = p[m.key] || {};
+      out[m.key] = {
+        view: !!src.view,
+        create: !!src.create,
+        edit: !!src.edit,
+        delete: !!src.delete,
+      };
+    });
+    return out;
+  }
+  // Compatibilidad payload viejo (create/edit/delete/view global)
+  if (["view", "create", "edit", "delete"].some((k) => Object.prototype.hasOwnProperty.call(p, k))) {
+    const flat = {
+      view: !!p.view,
+      create: !!p.create,
+      edit: !!p.edit,
+      delete: !!p.delete,
+    };
+    const out = defaultAdminPermissions();
+    PERMISSION_MODULES.forEach((m) => { out[m.key] = { ...flat }; });
+    out.dashboard = { view: flat.view, create: false, edit: false, delete: false };
+    out.online_users = { view: flat.view, create: false, edit: false, delete: false };
+    return out;
+  }
+  return defaultAdminPermissions();
+}
+
 export default function Users() {
   const { user: me } = useAuth();
   const { activeOrgId, isAll } = useOrg();
@@ -63,7 +138,7 @@ export default function Users() {
       name: "",
       role: "client",
       organization_id: me?.organization_id || "",
-      permissions: { create: false, edit: false, delete: false, view: true },
+      permissions: defaultClientPermissions(),
       status: "active",
       access_type: "permanent",
       access_start: "",
@@ -105,7 +180,7 @@ export default function Users() {
       name: u.name,
       role: u.role,
       organization_id: u.organization_id,
-      permissions: u.permissions || { create: false, edit: false, delete: false, view: true },
+      permissions: normalizePermissions(u.permissions, u.role),
       status: u.status || "active",
       access_type: u.access_type || "permanent",
       access_start: u.access_start || "",
@@ -120,6 +195,10 @@ export default function Users() {
     try {
       // Sanear fechas vacías
       const cleaned = { ...form };
+      if (!cleaned.email) cleaned.email = null;
+      if (cleaned.role === "client") cleaned.permissions = defaultClientPermissions();
+      else if (cleaned.role === "super_admin") cleaned.permissions = defaultSuperAdminPermissions();
+      else cleaned.permissions = normalizePermissions(cleaned.permissions, "admin");
       if (cleaned.access_type === "permanent") {
         cleaned.access_start = null;
         cleaned.access_end = null;
@@ -256,7 +335,10 @@ export default function Users() {
               {filteredUsers.map((u) => {
                 const isSelf = me?.id === u.id;
                 const ROLE_LEVEL = { super_admin: 3, admin: 2, client: 1 };
-                const canModify = !isSelf && (ROLE_LEVEL[me?.role] || 0) > (ROLE_LEVEL[u.role] || 0);
+                const canModify = !isSelf && (
+                  (ROLE_LEVEL[me?.role] || 0) > (ROLE_LEVEL[u.role] || 0) ||
+                  (!!me?.is_owner && (ROLE_LEVEL[me?.role] || 0) >= (ROLE_LEVEL[u.role] || 0))
+                );
                 const fullName = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.name;
                 return (
                 <TableRow key={u.id} className="border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50" data-testid="user-row">
@@ -356,7 +438,7 @@ export default function Users() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-white border-slate-200 rounded-lg max-w-lg" data-testid="user-form-dialog">
+        <DialogContent className="bg-white border-slate-200 rounded-lg max-w-lg max-h-[88vh] flex flex-col" data-testid="user-form-dialog">
           <DialogHeader>
             <DialogTitle className="font-heading tracking-tight text-slate-900">
               {editing ? "Editar usuario" : "Nuevo usuario"}
@@ -365,7 +447,7 @@ export default function Users() {
               {editing ? "Actualizar información del usuario" : "Crear un nuevo usuario del sistema"}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={save} className="space-y-4">
+          <form onSubmit={save} className="space-y-4 overflow-y-auto pr-1">
             <div>
               <Label className="overline block mb-1.5">Nombre (display)</Label>
               <Input
@@ -414,8 +496,7 @@ export default function Users() {
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  required
-                  disabled={!!editing}
+                required={false}
                   className="bg-white border-slate-200 rounded-md"
                   data-testid="user-email-input"
                 />
@@ -430,6 +511,7 @@ export default function Users() {
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
                   placeholder="ej: jperez"
                   autoComplete="off"
+                  required
                   className="bg-white border-slate-200 rounded-md"
                   data-testid="user-username-input"
                 />
@@ -457,7 +539,18 @@ export default function Users() {
                 </Label>
                 <Select
                   value={form.role}
-                  onValueChange={(v) => setForm({ ...form, role: v })}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...form,
+                      role: v,
+                      permissions:
+                        v === "client"
+                          ? defaultClientPermissions()
+                          : v === "super_admin"
+                            ? defaultSuperAdminPermissions()
+                            : defaultAdminPermissions(),
+                    })
+                  }
                   disabled={editing && me?.id === editing.id}
                 >
                   <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-role-select">
@@ -550,28 +643,53 @@ export default function Users() {
               )}
             </div>
 
-            <div>
-              <Label className="overline block mb-2">Permisos</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {["view", "create", "edit", "delete"].map((p) => (
-                  <label key={p} className="flex items-center gap-2 text-sm text-slate-700">
-                    <Checkbox
-                      checked={!!form.permissions[p]}
-                      onCheckedChange={(c) =>
-                        setForm({
-                          ...form,
-                          permissions: { ...form.permissions, [p]: !!c },
-                        })
-                      }
-                      data-testid={`perm-${p}-checkbox`}
-                    />
-                    <span className="capitalize">{p}</span>
-                  </label>
-                ))}
+            {form.role === "admin" && (
+              <div>
+                <Label className="overline block mb-2">Permisos por módulo</Label>
+                <div className="space-y-2">
+                  {PERMISSION_MODULES.map((m) => (
+                    <div key={m.key} className="border border-slate-200 rounded-md p-2">
+                      <div className="text-xs font-semibold text-slate-700 mb-2">{m.label}</div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {PERMISSION_ACTIONS.map((a) => (
+                          <label key={`${m.key}-${a}`} className="flex items-center gap-2 text-sm text-slate-700">
+                            <Checkbox
+                              checked={!!form.permissions?.[m.key]?.[a]}
+                              onCheckedChange={(c) =>
+                                setForm({
+                                  ...form,
+                                  permissions: {
+                                    ...form.permissions,
+                                    [m.key]: {
+                                      ...(form.permissions?.[m.key] || emptyCrud()),
+                                      [a]: !!c,
+                                    },
+                                  },
+                                })
+                              }
+                              data-testid={`perm-${m.key}-${a}-checkbox`}
+                            />
+                            <span className="capitalize">{a}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+            {form.role === "client" && (
+              <div className="text-xs rounded-md border border-slate-200 bg-slate-50 text-slate-600 p-3">
+                Los clientes no requieren permisos administrativos. Solo acceden a la app cliente.
+              </div>
+            )}
+            {form.role === "super_admin" && (
+              <div className="text-xs rounded-md border border-rose-200 bg-rose-50 text-rose-700 p-3">
+                Super Admin tiene acceso total a todos los módulos y acciones.
+              </div>
+            )}
 
-            <DialogFooter>
+            <DialogFooter className="sticky bottom-0 bg-white pt-2 border-t border-slate-200">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="rounded-md">
                 Cancelar
               </Button>

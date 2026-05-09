@@ -55,8 +55,20 @@ export default function Login() {
       if (u.role === "client") navigate("/client");
       else navigate("/admin/dashboard");
     } catch (err) {
-      const detail = formatApiError(err.response?.data?.detail) || err.message;
       const status = err.response?.status;
+      let detail;
+      if (!err.response) {
+        const msg = (err.message || "").toLowerCase();
+        const net =
+          err.code === "ERR_NETWORK" ||
+          msg.includes("network error") ||
+          msg.includes("failed to fetch");
+        detail = net
+          ? "No hay conexión con el servidor (red, certificado o bloqueo del dispositivo). Probá Wi‑Fi o datos; si usás la app Admin, instalá la última APK publicada desde el servidor."
+          : err.message || formatApiError(null);
+      } else {
+        detail = formatApiError(err.response.data?.detail) || err.message;
+      }
       // 426 Upgrade Required
       if (status === 426) {
         setVersionMismatch(true);
