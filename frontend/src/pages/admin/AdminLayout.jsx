@@ -17,6 +17,7 @@ import {
   Sun,
   Moon,
   KeyRound,
+  ClipboardList,
 } from "lucide-react";
 import { useSocket } from "../../context/SocketContext";
 import { useAlertAudio } from "../../context/AlertAudioContext";
@@ -30,6 +31,7 @@ const navItems = [
   { to: "/admin/users", icon: Users, label: "Usuarios", test: "nav-users", module: "users" },
   { to: "/admin/online-users", icon: Activity, label: "En línea", test: "nav-online-users", module: "online_users" },
   { to: "/admin/organizations", icon: Building2, label: "Organizaciones", test: "nav-organizations", module: "organizations" },
+  { to: "/admin/audit", icon: ClipboardList, label: "Auditoría", test: "nav-audit", module: "alerts" },
 ];
 
 function JarLogoCorner() {

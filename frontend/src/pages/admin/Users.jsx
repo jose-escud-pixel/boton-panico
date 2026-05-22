@@ -284,6 +284,7 @@ export default function Users() {
         const haystack = [
           u.name, u.email, u.username, u.first_name, u.last_name,
           u.phone, u.device_brand, u.device_model, u.device_platform,
+          u.created_by_name, u.created_by_email, u.created_by_username,
         ].filter(Boolean).join(" ").toLowerCase();
         if (!haystack.includes(v)) return false;
       }
@@ -327,6 +328,7 @@ export default function Users() {
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Contacto</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Rol</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Organización</TableHead>
+                <TableHead className="overline text-slate-500 dark:text-slate-400">Alta por</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Dispositivo</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400 text-right">Acciones</TableHead>
               </TableRow>
@@ -370,6 +372,27 @@ export default function Users() {
                     <Badge className={`rounded ${ROLE_STYLE[u.role]}`}>{u.role}</Badge>
                   </TableCell>
                   <TableCell className="text-slate-700 dark:text-slate-300 text-sm">{orgMap[u.organization_id] || "—"}</TableCell>
+                  <TableCell className="text-xs text-slate-600 dark:text-slate-300">
+                    {u.created_by_name || u.created_by_email || u.created_by_username ? (
+                      <div className="space-y-0.5">
+                        <div className="font-medium text-slate-800 dark:text-slate-100">
+                          {u.created_by_name || u.created_by_username || u.created_by_email}
+                        </div>
+                        {(u.created_by_email || u.created_by_username) && u.created_by_name && (
+                          <div className="font-mono text-[0.65rem] text-slate-500 dark:text-slate-400 truncate max-w-[160px]">
+                            {u.created_by_username ? `@${u.created_by_username}` : ""}
+                            {u.created_by_username && u.created_by_email ? " · " : ""}
+                            {u.created_by_email || ""}
+                          </div>
+                        )}
+                        {!u.created_by_name && u.created_by_email && (
+                          <div className="font-mono text-[0.65rem] text-slate-500 truncate max-w-[160px]">{u.created_by_email}</div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 italic">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs">
                     {u.device_id ? (
                       <div className="space-y-0.5">

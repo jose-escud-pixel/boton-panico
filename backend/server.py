@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from audit import write_audit
 from auth import (
     hash_password,
     verify_password,
@@ -145,6 +146,8 @@ async def startup():
     await db.push_subscriptions.create_index("user_id")
     await db.fcm_tokens.create_index("token", unique=True)
     await db.fcm_tokens.create_index("user_id")
+    await db.audit_logs.create_index("ts")
+    await db.audit_logs.create_index("organization_id")
     ensure_vapid_keys()
     # Inicializar Firebase de forma explícita al arrancar para ver errores de inmediato
     from push import _init_firebase
@@ -374,6 +377,13 @@ async def login(payload: LoginRequest, request: Request, response: Response):
         # Luego email exacto
         user = await db.users.find_one({"email": identifier})
     if not user or not verify_password(payload.password, user["password_hash"]):
+        await write_audit(
+            db,
+            action="auth.login_failed",
+            actor_email=identifier,
+            summary="Intento de login fallido",
+            meta={"identifier": identifier},
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # ------- Controles de acceso de cuenta -------
@@ -437,6 +447,17 @@ async def login(payload: LoginRequest, request: Request, response: Response):
     )
     refresh_token = create_refresh_token(user["id"])
     set_auth_cookies(response, access_token, refresh_token)
+    if user["role"] in ("admin", "super_admin"):
+        await write_audit(
+            db,
+            action="auth.login",
+            actor_id=user["id"],
+            actor_email=user.get("email"),
+            actor_name=user.get("name"),
+            organization_id=user.get("organization_id"),
+            summary=f"Inicio de sesión ({user['role']})",
+            meta={"role": user["role"]},
+        )
     public = strip_sensitive(user)
     public["is_owner"] = _is_owner(public)
     return {
@@ -655,6 +676,11 @@ async def create_user(payload: UserCreate, user: dict = Depends(require_admin)):
         "access_type": payload.access_type,
         "access_start": payload.access_start,
         "access_end": payload.access_end,
+        # Quién dio de alta al usuario (administrador autenticado en esta petición)
+        "created_by_id": user.get("id"),
+        "created_by_name": user.get("name"),
+        "created_by_email": user.get("email"),
+        "created_by_username": user.get("username"),
     }
     if payload.role == "client":
         doc["permissions"] = _client_permissions()
@@ -789,6 +815,18 @@ async def create_alert(payload: AlertCreate, user: dict = Depends(get_current_us
     }
     await db.alerts.insert_one(dict(alert))
     alert.pop("_id", None)
+    await write_audit(
+        db,
+        action="alert.created",
+        actor_id=user["id"],
+        actor_email=user.get("email"),
+        actor_name=user.get("name"),
+        organization_id=org_id,
+        entity_type="alert",
+        entity_id=alert["id"],
+        summary=f"Nueva alerta ({payload.type})",
+        meta={"type": payload.type},
+    )
     # Emit socket.io event to admins
     await sio.emit("alert:new", alert, room="admins")
     await sio.emit("alert:new", alert, room=f"org:{org_id}")
@@ -900,6 +938,24 @@ async def list_alerts(
     return alerts
 
 
+@api.get("/audit")
+async def list_audit_logs(
+    user: dict = Depends(require_admin),
+    limit: int = Query(150, ge=1, le=500),
+    skip: int = Query(0, ge=0),
+    action: Optional[str] = None,
+):
+    clauses = []
+    if user["role"] == "admin":
+        clauses.append({"organization_id": user.get("organization_id")})
+        clauses.append({"action": {"$ne": "auth.login_failed"}})
+    if action:
+        clauses.append({"action": action})
+    query = {"$and": clauses} if len(clauses) > 1 else (clauses[0] if clauses else {})
+    cursor = db.audit_logs.find(query, {"_id": 0}).sort("ts", -1).skip(skip).limit(limit)
+    return await cursor.to_list(length=limit)
+
+
 @api.get("/alerts/{alert_id}")
 async def get_alert(alert_id: str, user: dict = Depends(get_current_user)):
     alert = await db.alerts.find_one({"id": alert_id}, {"_id": 0})
@@ -930,11 +986,24 @@ async def update_alert_status(
         "changed_at": datetime.now(timezone.utc).isoformat(),
         "note": payload.note,
     }
+    prev_status = alert.get("status")
     await db.alerts.update_one(
         {"id": alert_id},
         {"$set": {"status": payload.status}, "$push": {"history": history_entry}},
     )
     updated = await db.alerts.find_one({"id": alert_id}, {"_id": 0})
+    await write_audit(
+        db,
+        action="alert.status_changed",
+        actor_id=user["id"],
+        actor_email=user.get("email"),
+        actor_name=user.get("name"),
+        organization_id=alert.get("organization_id"),
+        entity_type="alert",
+        entity_id=alert_id,
+        summary=f"Alerta {payload.status}",
+        meta={"from": prev_status, "to": payload.status, "note": payload.note},
+    )
     await sio.emit("alert:updated", updated, room="admins")
     await sio.emit("alert:updated", updated, room=f"org:{alert['organization_id']}")
     return updated

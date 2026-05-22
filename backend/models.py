@@ -147,6 +147,10 @@ class UserPublic(BaseModel):
     organization_id: Optional[str] = None
     permissions: Permissions = Field(default_factory=Permissions)
     created_at: str
+    created_by_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_by_email: Optional[str] = None
+    created_by_username: Optional[str] = None
     status: UserStatus = "active"
     access_type: AccessType = "permanent"
     access_start: Optional[str] = None

@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import api from "../lib/api";
-import { isNative, registerNativePush, setupForegroundListeners } from "../lib/nativePush";
 
 const AuthContext = createContext(null);
 
@@ -13,10 +12,6 @@ export function AuthProvider({ children }) {
       try {
         const { data } = await api.get("/auth/me");
         setUser(data);
-        // Si estamos en app nativa, registrar FCM al recuperar sesión
-        if (isNative()) {
-          registerNativePush().catch(() => {});
-        }
       } catch {
         setUser(false);
       } finally {
@@ -25,30 +20,15 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  useEffect(() => {
-    let cleanup = null;
-    if (!isNative() || !user || user === false || user.role === "client") return () => {};
-    setupForegroundListeners(() => {}).then((fn) => {
-      cleanup = fn;
-    }).catch(() => {});
-    return () => {
-      try { cleanup && cleanup(); } catch {}
-    };
-  }, [user]);
-
-  const login = async (identifier, password) => {
-    const { data } = await api.post("/auth/login", { identifier, password });
+  const login = async (email, password) => {
+    const { data } = await api.post("/auth/login", {
+      email: typeof email === "string" ? email.trim() : email,
+      password,
+    });
     if (data.access_token) {
       localStorage.setItem("access_token", data.access_token);
     }
-    if (data.refresh_token) {
-      localStorage.setItem("refresh_token", data.refresh_token);
-    }
     setUser(data.user);
-    // Auto-registro FCM en native después del login
-    if (isNative()) {
-      registerNativePush().catch(() => {});
-    }
     return data.user;
   };
 
@@ -57,7 +37,6 @@ export function AuthProvider({ children }) {
       await api.post("/auth/logout");
     } catch {}
     localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
     setUser(false);
   };
 

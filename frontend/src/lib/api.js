@@ -21,6 +21,9 @@ export const SOCKET_IO_SERVER_URL =
     ? window.location.origin
     : "");
 
+/** Path de socket.io que debe coincidir con backend. */
+export const SOCKET_IO_PATH = `${BASE_PATH}/api/socket.io`;
+
 if (Capacitor.isNativePlatform() && !/^https?:\/\//i.test(API_BASE)) {
   // eslint-disable-next-line no-console
   console.error(
@@ -29,9 +32,13 @@ if (Capacitor.isNativePlatform() && !/^https?:\/\//i.test(API_BASE)) {
   );
 }
 
-// Plataforma identificada para el backend. Los clientes (role=client) solo
-// pueden loguearse si este header es "native" — bloqueo estricto desde web.
-const APP_PLATFORM = Capacitor.isNativePlatform() ? "native" : "web";
+// Plataforma identificada para el backend. Algunos builds pueden devolver
+// false en Capacitor.isNativePlatform() aunque corran en capacitor://localhost.
+const IS_NATIVE_RUNTIME =
+  Capacitor.isNativePlatform() ||
+  (typeof window !== "undefined" && String(window.location?.protocol || "").startsWith("capacitor"));
+// Los clientes (role=client) solo pueden loguearse si este header es "native".
+const APP_PLATFORM = IS_NATIVE_RUNTIME ? "native" : "web";
 
 // En WebView nativo, withCredentials + cookies cross-origin suele disparar CORS
 // estricto o bloqueo de terceros → axios queda sin response (ERR_NETWORK). El JWT

@@ -55,6 +55,29 @@ const TILE_GRADIENTS = {
 };
 
 const COUNTDOWN_SECONDS = 5;
+const OFFLINE_QUEUE_KEY = "nacurutu_offline_alerts_v1";
+
+function loadOfflineQueue() {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    const data = raw ? JSON.parse(raw) : [];
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOfflineQueue(items) {
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
+}
+
+function shouldQueueOffline(error) {
+  if (error?.response) return false;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+  const code = error?.code;
+  const msg = error?.message || "";
+  return code === "ERR_NETWORK" || msg === "Network Error";
+}
 
 export default function PanicApp() {
   const { user, logout } = useAuth();
@@ -69,6 +92,7 @@ export default function PanicApp() {
   const [history, setHistory] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [offlinePending, setOfflinePending] = useState(() => loadOfflineQueue().length);
 
   const [message, setMessage] = useState("");
   const [imageFile, setImageFile] = useState(null);
@@ -92,6 +116,36 @@ export default function PanicApp() {
       setHistory(data);
     } catch {}
   }, []);
+
+  const refreshOfflineCount = useCallback(() => {
+    setOfflinePending(loadOfflineQueue().length);
+  }, []);
+
+  const flushOfflineAlerts = useCallback(async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    const queue = loadOfflineQueue();
+    if (!queue.length) return;
+    const failed = [];
+    let sent = 0;
+    for (const item of queue) {
+      try {
+        await api.post("/alerts", item);
+        sent += 1;
+      } catch (e) {
+        const st = e.response?.status;
+        if (st >= 400 && st < 500 && st !== 408) {
+          continue;
+        }
+        failed.push(item);
+      }
+    }
+    saveOfflineQueue(failed);
+    refreshOfflineCount();
+    if (sent > 0) {
+      toast.success(`Enviadas ${sent} alerta(s) pendientes`);
+      loadHistory();
+    }
+  }, [loadHistory, refreshOfflineCount]);
 
   useEffect(() => {
     loadOrg();
@@ -133,6 +187,13 @@ export default function PanicApp() {
       })();
     }
   }, [loadOrg, loadHistory, logout, navigate]);
+
+  useEffect(() => {
+    const onOnline = () => flushOfflineAlerts();
+    window.addEventListener("online", onOnline);
+    flushOfflineAlerts();
+    return () => window.removeEventListener("online", onOnline);
+  }, [flushOfflineAlerts]);
 
   useEffect(() => {
     return () => {
@@ -205,6 +266,13 @@ export default function PanicApp() {
     setAudioDataUrl("");
   };
 
+  const enqueueOfflineAlert = useCallback((body) => {
+    const queue = loadOfflineQueue();
+    queue.push({ ...body, queuedAt: Date.now() });
+    saveOfflineQueue(queue);
+    refreshOfflineCount();
+  }, [refreshOfflineCount]);
+
   const sendAlert = useCallback(async () => {
     if (!activeType || sending) return;
     setSending(true);
@@ -220,16 +288,25 @@ export default function PanicApp() {
         uploadedImageUrl = up?.url || null;
       }
       const location = await getLocation();
-      await api.post("/alerts", {
+      const body = {
         type: activeType,
         message: message || null,
         image_url: uploadedImageUrl || null,
         audio_url: audioDataUrl || null,
         location,
-      });
-      toast.success(`Alerta de ${ALERT_TYPES[activeType].voice.toLowerCase()} enviada`, {
-        description: "Ayuda en camino. Mantén la calma.",
-      });
+      };
+      try {
+        await api.post("/alerts", body);
+        toast.success(`Alerta de ${ALERT_TYPES[activeType].voice.toLowerCase()} enviada`, {
+          description: "Ayuda en camino. Mantén la calma.",
+        });
+      } catch (e) {
+        if (!shouldQueueOffline(e)) throw e;
+        enqueueOfflineAlert(body);
+        toast.message("Sin conexión", {
+          description: "Guardamos tu alerta y se enviará al recuperar Internet.",
+        });
+      }
       closeDialog();
       loadHistory();
     } catch (e) {
@@ -238,7 +315,7 @@ export default function PanicApp() {
       setSending(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeType, sending, message, imageFile, audioDataUrl]);
+  }, [activeType, sending, message, imageFile, audioDataUrl, enqueueOfflineAlert, loadHistory]);
 
   // Dispara pánico INMEDIATO sin countdown ni dialog (llamado desde deep link
   // cuando el usuario presionó 5 veces el botón de encendido).
@@ -250,16 +327,25 @@ export default function PanicApp() {
     if (navigator.vibrate) navigator.vibrate([200, 100, 400]);
     try {
       const location = await getLocation();
-      await api.post("/alerts", {
+      const body = {
         type: "panic",
         message: "Pánico automático (botón de encendido x4)",
         image_url: null,
         audio_url: null,
         location,
-      });
-      toast.success("Pánico enviado por botón de encendido", {
-        description: "Ayuda en camino. Mantén la calma.",
-      });
+      };
+      try {
+        await api.post("/alerts", body);
+        toast.success("Pánico enviado por botón de encendido", {
+          description: "Ayuda en camino. Mantén la calma.",
+        });
+      } catch (e) {
+        if (!shouldQueueOffline(e)) throw e;
+        enqueueOfflineAlert(body);
+        toast.message("Sin conexión", {
+          description: "Pánico guardado sin red; se enviará automáticamente.",
+        });
+      }
       loadHistory();
     } catch (e) {
       toast.error(e.response ? formatApiError(e.response?.data?.detail) : e.message);
@@ -267,7 +353,7 @@ export default function PanicApp() {
       setSending(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sending]);
+  }, [sending, enqueueOfflineAlert, loadHistory]);
 
   // Countdown SÓLO para pánico. Pausa automática al pausar (paused=true).
   useEffect(() => {
@@ -558,6 +644,15 @@ export default function PanicApp() {
       <footer className={`px-4 py-3 border-t text-center ${
         isDark ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white/40"
       }`}>
+        {offlinePending > 0 && (
+          <p className={`text-[0.72rem] mb-1 inline-block px-2 py-1 rounded border ${
+            isDark
+              ? "text-amber-300 bg-amber-950/60 border-amber-800"
+              : "text-amber-800 bg-amber-50 border-amber-200"
+          }`}>
+            {offlinePending} alerta(s) pendiente(s) sin red
+          </p>
+        )}
         <p className={`text-[0.65rem] font-mono-tactical tracking-wider ${
           isDark ? "text-slate-500" : "text-slate-500"
         }`}>
