@@ -7,6 +7,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { OrgProvider } from "./context/OrgContext";
 import { Toaster } from "./components/ui/sonner";
 import { IS_ADMIN_BUILD } from "./lib/buildMode";
+import UpdateBanner from "./components/UpdateBanner";
 
 import Login from "./pages/Login";
 import AdminLayout from "./pages/admin/AdminLayout";
@@ -67,44 +68,45 @@ function App() {
           <SocketProvider>
             <AlertAudioProvider>
               <BrowserRouter basename={BASENAME}>
-              <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route
-              path="/client"
-              element={
-                <ProtectedRoute roles={["client"]}>
-                  <PanicApp />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute roles={["super_admin", "admin"]}>
-                  <AdminLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<Navigate to="dashboard" replace />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="alerts" element={<Alerts />} />
-              <Route path="users" element={<Users />} />
-              <Route path="organizations" element={<Organizations />} />
-              <Route path="online-users" element={<OnlineUsers />} />
-              <Route path="audit" element={<Audit />} />
-            </Route>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-          <Toaster
-            theme="light"
-            position="top-right"
-            toastOptions={{
-              classNames: {
-                toast: "bg-white border border-slate-200 rounded-md shadow-md",
-              },
-            }}
-          />
+                <UpdateBanner />
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route
+                    path="/client"
+                    element={
+                      <ProtectedRoute roles={["client"]}>
+                        <PanicApp />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin"
+                    element={
+                      <ProtectedRoute roles={["super_admin", "admin"]}>
+                        <AdminLayout />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="dashboard" replace />} />
+                    <Route path="dashboard" element={<Dashboard />} />
+                    <Route path="alerts" element={<Alerts />} />
+                    <Route path="users" element={<Users />} />
+                    <Route path="organizations" element={<Organizations />} />
+                    <Route path="online-users" element={<OnlineUsers />} />
+                    <Route path="audit" element={<Audit />} />
+                  </Route>
+                  <Route path="/" element={<RootRedirect />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+                <Toaster
+                  theme="light"
+                  position="top-right"
+                  toastOptions={{
+                    classNames: {
+                      toast: "bg-white border border-slate-200 rounded-md shadow-md",
+                    },
+                  }}
+                />
             </BrowserRouter>
             </AlertAudioProvider>
           </SocketProvider>

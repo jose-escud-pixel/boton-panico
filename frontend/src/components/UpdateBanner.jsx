@@ -8,9 +8,8 @@ import { IS_ADMIN_BUILD } from "../lib/buildMode";
 /**
  * Banner que detecta si hay una nueva versión de la APK disponible.
  *
- * - Cliente APK (remote bundle): detecta OTA vía `version.json` publicado.
- * - Admin APK (self-contained): NO tiene OTA. Las actualizaciones requieren
- *   reinstalar el APK. El banner no se muestra.
+ * - Cliente APK: detecta actualizaciones vía `version.json`.
+ * - Admin APK: detecta actualizaciones vía `version-admin.json`.
  * - Web: nunca se muestra (los usuarios web siempre tienen la última versión).
  */
 export default function UpdateBanner() {
@@ -18,7 +17,7 @@ export default function UpdateBanner() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (!isNative() || IS_ADMIN_BUILD) return;
+    if (!isNative()) return;
     let cancelled = false;
     (async () => {
       const data = await fetchRemoteVersion();
@@ -31,13 +30,14 @@ export default function UpdateBanner() {
     return () => { cancelled = true; };
   }, []);
 
-  if (!isNative() || IS_ADMIN_BUILD || !remote || dismissed) return null;
+  if (!isNative() || !remote || dismissed) return null;
 
   const apkUrl = remote.apk_url || APK_URL;
 
   const handleUpdate = () => openApkDownload(apkUrl);
 
   const displayVersion = remote.version || `build ${remote.versionCode}`;
+  const appLabel = IS_ADMIN_BUILD ? "Admin" : "Cliente";
   const currentLabel = `actual: ${APP_VERSION} (build ${APP_BUILD})`;
 
   return (
@@ -49,7 +49,7 @@ export default function UpdateBanner() {
         <Sparkles className="w-5 h-5 flex-shrink-0" strokeWidth={2} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold leading-tight">
-            Nueva versión {displayVersion} disponible
+            Nueva versión {appLabel} {displayVersion} disponible
           </div>
           <div className="text-xs text-rose-100 mt-0.5 truncate">
             {remote.changelog || currentLabel}

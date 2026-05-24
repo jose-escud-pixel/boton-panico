@@ -25,7 +25,6 @@ import { applyPowerButtonPref } from "../../lib/powerButtonPanic";
 import { readDeviceInfo, bindDeviceToBackend } from "../../lib/deviceBind";
 import { useTheme } from "../../context/ThemeContext";
 import ClientSettingsDialog from "../../components/ClientSettingsDialog";
-import UpdateBanner from "../../components/UpdateBanner";
 import VersionBadge from "../../components/VersionBadge";
 import SponsorContacts from "../../components/SponsorContacts";
 import OrganizationLogos from "../../components/OrganizationLogos";
@@ -56,6 +55,12 @@ const TILE_GRADIENTS = {
 
 const COUNTDOWN_SECONDS = 5;
 const OFFLINE_QUEUE_KEY = "nacurutu_offline_alerts_v1";
+const CAMERA_DRAFT_KEY = "nacurutu_camera_alert_draft_v1";
+const MAX_IMAGE_DIMENSION = 960;
+const IMAGE_QUALITY = 0.58;
+const MAX_COMPRESSED_IMAGE_BYTES = 650 * 1024;
+const MAX_ORIGINAL_IMAGE_BYTES = 25 * 1024 * 1024;
+const IMAGE_UPLOAD_TIMEOUT_MS = 45000;
 
 function loadOfflineQueue() {
   try {
@@ -79,6 +84,49 @@ function shouldQueueOffline(error) {
   return code === "ERR_NETWORK" || msg === "Network Error";
 }
 
+function loadImageForCompression(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("No se pudo leer la imagen"));
+    };
+    img.src = url;
+  });
+}
+
+async function drawCompressedImage(img, maxDimension, quality) {
+  const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+  const width = Math.max(1, Math.round(img.width * scale));
+  const height = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { alpha: false });
+  ctx.drawImage(img, 0, 0, width, height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+}
+
+async function compressImageFile(file) {
+  if (!file || !file.type?.startsWith("image/")) return file;
+  const img = await loadImageForCompression(file);
+  let blob = await drawCompressedImage(img, MAX_IMAGE_DIMENSION, IMAGE_QUALITY);
+  if (blob && blob.size > MAX_COMPRESSED_IMAGE_BYTES) {
+    blob = await drawCompressedImage(img, 720, 0.5);
+  }
+  if (blob && blob.size > MAX_COMPRESSED_IMAGE_BYTES) {
+    blob = await drawCompressedImage(img, 540, 0.45);
+  }
+  if (!blob) throw new Error("No se pudo comprimir la imagen");
+  const name = (file.name || "foto-alerta.jpg").replace(/\.[^.]+$/, ".jpg");
+  return new File([blob], name, { type: "image/jpeg", lastModified: Date.now() });
+}
+
 export default function PanicApp() {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
@@ -93,6 +141,8 @@ export default function PanicApp() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [offlinePending, setOfflinePending] = useState(() => loadOfflineQueue().length);
+  const [imagePicking, setImagePicking] = useState(false);
+  const [imageProcessing, setImageProcessing] = useState(false);
 
   const [message, setMessage] = useState("");
   const [imageFile, setImageFile] = useState(null);
@@ -101,6 +151,46 @@ export default function PanicApp() {
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const fileInputRef = useRef(null);
+
+  const saveCameraDraft = useCallback(() => {
+    if (!activeType) return;
+    try {
+      localStorage.setItem(
+        CAMERA_DRAFT_KEY,
+        JSON.stringify({
+          activeType,
+          message,
+          audioDataUrl,
+          paused: true,
+          ts: Date.now(),
+        })
+      );
+    } catch {}
+  }, [activeType, message, audioDataUrl]);
+
+  const restoreCameraDraft = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(CAMERA_DRAFT_KEY);
+      if (!raw) return null;
+      const draft = JSON.parse(raw);
+      if (!draft?.activeType) return null;
+      setActiveType(draft.activeType);
+      setMessage(draft.message || "");
+      setAudioDataUrl(draft.audioDataUrl || "");
+      setPaused(true);
+      setCountdown(0);
+      return draft;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const clearCameraDraft = useCallback(() => {
+    try {
+      localStorage.removeItem(CAMERA_DRAFT_KEY);
+    } catch {}
+  }, []);
 
   const loadOrg = useCallback(async () => {
     try {
@@ -150,6 +240,13 @@ export default function PanicApp() {
   useEffect(() => {
     loadOrg();
     loadHistory();
+    try {
+      const rawDraft = localStorage.getItem(CAMERA_DRAFT_KEY);
+      const draft = rawDraft ? JSON.parse(rawDraft) : null;
+      if (draft?.activeType && Date.now() - Number(draft.ts || 0) < 10 * 60 * 1000) {
+        restoreCameraDraft();
+      }
+    } catch {}
     // Solicitar permiso de ubicación proactivamente en nativo (Android)
     // para que el sistema muestre el diálogo al abrir la app,
     // NO cuando el usuario presiona pánico (que es tarde).
@@ -186,7 +283,7 @@ export default function PanicApp() {
         }
       })();
     }
-  }, [loadOrg, loadHistory, logout, navigate]);
+  }, [loadOrg, loadHistory, logout, navigate, restoreCameraDraft]);
 
   useEffect(() => {
     const onOnline = () => flushOfflineAlerts();
@@ -200,6 +297,19 @@ export default function PanicApp() {
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
     };
   }, [imagePreviewUrl]);
+
+  useEffect(() => {
+    if (!imagePicking) return;
+    const clearPicking = () => {
+      window.setTimeout(() => setImagePicking(false), 500);
+    };
+    window.addEventListener("focus", clearPicking);
+    document.addEventListener("visibilitychange", clearPicking);
+    return () => {
+      window.removeEventListener("focus", clearPicking);
+      document.removeEventListener("visibilitychange", clearPicking);
+    };
+  }, [imagePicking]);
 
   // Deep link listener: cuando el servicio nativo dispara 5 presiones del
   // power button, abre la app con URL `nacurutu://panic?source=power_button`.
@@ -255,6 +365,8 @@ export default function PanicApp() {
   };
 
   const closeDialog = () => {
+    if (imagePicking || imageProcessing) return;
+    clearCameraDraft();
     if (recording) stopRecording();
     setActiveType(null);
     setCountdown(0);
@@ -274,20 +386,30 @@ export default function PanicApp() {
   }, [refreshOfflineCount]);
 
   const sendAlert = useCallback(async () => {
-    if (!activeType || sending) return;
+    if (!activeType || sending || imageProcessing) return;
     setSending(true);
     setShake(true);
     setTimeout(() => setShake(false), 500);
     if (navigator.vibrate) navigator.vibrate([100, 50, 200]);
     try {
       let uploadedImageUrl = null;
-      if (imageFile) {
-        const fd = new FormData();
-        fd.append("file", imageFile);
-        const { data: up } = await api.post("/uploads/image", fd);
-        uploadedImageUrl = up?.url || null;
-      }
       const location = await getLocation();
+      if (imageFile) {
+        try {
+          const fd = new FormData();
+          fd.append("file", imageFile, imageFile.name || "foto-alerta.jpg");
+          const { data: up } = await api.post("/uploads/image", fd, {
+            timeout: IMAGE_UPLOAD_TIMEOUT_MS,
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+          uploadedImageUrl = up?.url || null;
+        } catch (e) {
+          console.warn("No se pudo adjuntar la foto:", e);
+          toast.warning("La foto no pudo adjuntarse, pero enviaremos la alerta igual.", {
+            description: "La conexión puede estar lenta. La emergencia se envía primero.",
+          });
+        }
+      }
       const body = {
         type: activeType,
         message: message || null,
@@ -315,7 +437,7 @@ export default function PanicApp() {
       setSending(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeType, sending, message, imageFile, audioDataUrl, enqueueOfflineAlert, loadHistory]);
+  }, [activeType, sending, imageProcessing, message, imageFile, audioDataUrl, enqueueOfflineAlert, loadHistory]);
 
   // Dispara pánico INMEDIATO sin countdown ni dialog (llamado desde deep link
   // cuando el usuario presionó 5 veces el botón de encendido).
@@ -371,17 +493,130 @@ export default function PanicApp() {
     if (activeType === "panic" && !paused) setPaused(true);
   };
 
-  const onPickImage = (file) => {
+  const onPickImage = async (file) => {
     pauseCountdown();
+    setImagePicking(false);
     if (!file) return;
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error("Imagen demasiado grande (máx 50MB)");
+    if (file.size > MAX_ORIGINAL_IMAGE_BYTES) {
+      toast.error("Imagen demasiado grande. Prueba con una foto más liviana.");
       return;
     }
-    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
-    setImageFile(file);
-    setImagePreviewUrl(URL.createObjectURL(file));
+    setImageProcessing(true);
+    try {
+      const compressed = await compressImageFile(file);
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+      setImageFile(compressed);
+      setImagePreviewUrl(URL.createObjectURL(compressed));
+      clearCameraDraft();
+      if (compressed.size < file.size) {
+        const finalKb = Math.max(1, Math.round(compressed.size / 1024));
+        toast.success(`Foto lista para enviar (${finalKb} KB).`);
+      } else {
+        toast.success("Foto lista");
+      }
+    } catch {
+      toast.error("No se pudo preparar la foto. Puedes enviar la alerta sin imagen.");
+      setImageFile(null);
+      setImagePreviewUrl("");
+    } finally {
+      setImageProcessing(false);
+    }
   };
+
+  const processNativeCameraPhoto = async (photo) => {
+    const photoUrl = photo?.webPath || photo?.path;
+    if (!photoUrl) {
+      setImagePicking(false);
+      return;
+    }
+    restoreCameraDraft();
+    setImagePicking(false);
+    setImageProcessing(true);
+    try {
+      let readableUrl = photoUrl;
+      if (!/^https?:|^blob:|^data:/i.test(readableUrl)) {
+        const { Capacitor } = await import("@capacitor/core");
+        readableUrl = Capacitor.convertFileSrc(readableUrl);
+      }
+      const res = await fetch(readableUrl);
+      if (!res.ok) throw new Error("No se pudo leer la foto");
+      const blob = await res.blob();
+      const file = new File([blob], `foto-alerta-${Date.now()}.jpg`, {
+        type: blob.type || "image/jpeg",
+        lastModified: Date.now(),
+      });
+      await onPickImage(file);
+    } catch {
+      setImageFile(null);
+      setImagePreviewUrl("");
+      toast.error("No se pudo recuperar la foto. La alerta puede enviarse sin imagen.");
+    } finally {
+      setImagePicking(false);
+      setImageProcessing(false);
+    }
+  };
+
+  const pickNativeCameraImage = async () => {
+    pauseCountdown();
+    setImagePicking(true);
+    saveCameraDraft();
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+      const photo = await Camera.getPhoto({
+        quality: 55,
+        width: MAX_IMAGE_DIMENSION,
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Camera,
+        correctOrientation: true,
+        saveToGallery: false,
+        promptLabelHeader: "Foto de apoyo",
+        promptLabelPhoto: "Tomar foto",
+        promptLabelPicture: "Usar cámara",
+      });
+      await processNativeCameraPhoto(photo);
+    } catch (e) {
+      setImagePicking(false);
+      restoreCameraDraft();
+      toast.message("Cámara cancelada", {
+        description: "Puedes enviar la alerta sin imagen o intentar de nuevo.",
+      });
+    }
+  };
+
+  const pickImage = () => {
+    pauseCountdown();
+    if (isNative()) {
+      pickNativeCameraImage();
+      return;
+    }
+    setImagePicking(true);
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  useEffect(() => {
+    if (!isNative()) return;
+    let listenerHandle = null;
+    (async () => {
+      try {
+        const { App } = await import("@capacitor/app");
+        listenerHandle = await App.addListener("appRestoredResult", (event) => {
+          if (event?.pluginId !== "Camera") return;
+          restoreCameraDraft();
+          if (event?.data) {
+            processNativeCameraPhoto(event.data);
+          } else {
+            setImagePicking(false);
+          }
+        });
+      } catch (e) {
+        console.warn("No se pudo registrar restauración de cámara:", e);
+      }
+    })();
+    return () => {
+      try { listenerHandle?.remove?.(); } catch {}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoreCameraDraft]);
 
   const startRecording = async () => {
     pauseCountdown();
@@ -431,8 +666,6 @@ export default function PanicApp() {
       } ${shake ? "shake" : ""}`}
       data-testid="client-panic-app"
     >
-      <UpdateBanner />
-
       {/* ========== HEADER ========== */}
       <header
         className={`sticky top-0 z-20 backdrop-blur-xl border-b ${
@@ -666,7 +899,13 @@ export default function PanicApp() {
       {/* ================================ */}
       {/* UNIFIED ALERT DIALOG */}
       {/* ================================ */}
-      <Dialog open={!!activeType} onOpenChange={(o) => !o && closeDialog()}>
+      <Dialog
+        open={!!activeType}
+        onOpenChange={(o) => {
+          if (!o && (imagePicking || imageProcessing)) return;
+          if (!o) closeDialog();
+        }}
+      >
         <DialogContent
           className={`rounded-2xl max-w-md border ${
             isDark
@@ -732,24 +971,40 @@ export default function PanicApp() {
 
                 <div className="grid grid-cols-2 gap-2">
                   {/* FOTO */}
-                  <label className="cursor-pointer">
+                  <button
+                    type="button"
+                    className={`${imageProcessing ? "pointer-events-none opacity-70" : ""}`}
+                    onClick={pickImage}
+                    disabled={imageProcessing}
+                  >
                     <div className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-md text-sm border transition-colors ${
-                      imagePreviewUrl
+                      imagePreviewUrl || imageProcessing
                         ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
                         : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
                     }`}>
-                      <ImageIcon className="w-4 h-4" strokeWidth={1.8} />
-                      <span className="font-semibold">{imagePreviewUrl ? "Foto lista" : "Agregar foto"}</span>
+                      {imageProcessing ? (
+                        <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.8} />
+                      ) : (
+                        <ImageIcon className="w-4 h-4" strokeWidth={1.8} />
+                      )}
+                      <span className="font-semibold">
+                        {imageProcessing ? "Preparando..." : imagePreviewUrl ? "Foto lista" : "Agregar foto"}
+                      </span>
                     </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={(e) => onPickImage(e.target.files?.[0])}
-                      data-testid="dialog-image-input"
-                    />
-                  </label>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={imageProcessing}
+                    onChange={(e) => {
+                      onPickImage(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                    data-testid="dialog-image-input"
+                  />
 
                   {/* AUDIO */}
                   {!recording ? (
@@ -816,12 +1071,16 @@ export default function PanicApp() {
                 <Button
                   type="button"
                   onClick={sendAlert}
-                  disabled={sending}
+                  disabled={sending || imageProcessing}
                   className={`h-12 ${accent.btn} text-white rounded-lg text-base font-bold`}
                   data-testid="dialog-send-button"
                 >
-                  {sending ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Send className="w-5 h-5 mr-2" strokeWidth={2} />}
-                  Enviar
+                  {sending || imageProcessing ? (
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5 mr-2" strokeWidth={2} />
+                  )}
+                  {imageProcessing ? "Preparando..." : "Enviar"}
                 </Button>
               </div>
             </>

@@ -1,3 +1,5 @@
+import { IS_ADMIN_BUILD } from "./buildMode";
+
 /**
  * Versión actual de la app embebida en el bundle.
  *
@@ -10,16 +12,20 @@
  *   NO lo edites a mano; el script lo maneja.
  */
 export const APP_VERSION = "1.0.0";
-export const APP_BUILD = 43;
+export const APP_BUILD = 56;
 
 /**
  * URL del archivo version.json que publica el servidor.
  * Debe devolver: { "version": "1.0.1", "versionCode": 5, "apk_url": "...", "changelog": "..." }
  */
-export const VERSION_JSON_URL = "/boton-panico/downloads/version.json";
+export const VERSION_JSON_URL = IS_ADMIN_BUILD
+  ? "/boton-panico/downloads/version-admin.json"
+  : "/boton-panico/downloads/version.json";
 
 /** URL pública del APK más reciente. */
-export const APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
+export const APK_URL = IS_ADMIN_BUILD
+  ? "/boton-panico/downloads/nacurutu-admin-latest.apk"
+  : "/boton-panico/downloads/nacurutu-latest.apk";
 
 /** Compara dos versiones semver. Retorna 1 si a>b, -1 si a<b, 0 si iguales. */
 export function compareVersions(a, b) {

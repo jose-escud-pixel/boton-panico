@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "versionCode": 43,
+  "versionCode": 56,
   "apk_url": "/boton-panico/downloads/nacurutu-admin-latest.apk",
   "build_mode": "admin",
-  "changelog": "Build 2026-05-09 10:40",
-  "build_timestamp": "2026-05-09T13:40:42Z"
+  "changelog": "Build 2026-05-23 22:41",
+  "build_timestamp": "2026-05-24T01:41:28Z"
 }

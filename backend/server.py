@@ -142,6 +142,9 @@ async def startup():
     await db.organizations.create_index("name")
     await db.alerts.create_index("organization_id")
     await db.alerts.create_index("timestamp")
+    await db.alerts.create_index([("organization_id", 1), ("archived", 1), ("status", 1), ("timestamp", -1)])
+    await db.alerts.create_index([("user_id", 1), ("archived", 1), ("timestamp", -1)])
+    await db.alerts.create_index([("type", 1), ("archived", 1), ("timestamp", -1)])
     await db.push_subscriptions.create_index("endpoint", unique=True)
     await db.push_subscriptions.create_index("user_id")
     await db.fcm_tokens.create_index("token", unique=True)
@@ -239,6 +242,19 @@ def strip_sensitive(user_doc: dict) -> dict:
     user_doc.pop("_id", None)
     user_doc.pop("password_hash", None)
     return user_doc
+
+
+def alert_summary(alert: dict) -> dict:
+    """Return a lightweight alert shape for lists and socket events."""
+    doc = dict(alert)
+    doc.pop("_id", None)
+    doc.pop("image_url", None)
+    doc.pop("audio_url", None)
+    doc.pop("history", None)
+    doc["has_image"] = bool(alert.get("has_image") or alert.get("image_url"))
+    doc["has_audio"] = bool(alert.get("has_audio") or alert.get("audio_url"))
+    doc["history_count"] = len(alert.get("history") or [])
+    return doc
 
 
 # Cache de la versión requerida. Se invalida cada 30s para que un re-deploy
@@ -801,6 +817,8 @@ async def create_alert(payload: AlertCreate, user: dict = Depends(get_current_us
         "message": payload.message,
         "image_url": payload.image_url,
         "audio_url": payload.audio_url,
+        "has_image": bool(payload.image_url),
+        "has_audio": bool(payload.audio_url),
         "location": payload.location.model_dump() if payload.location else None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "history": [
@@ -827,9 +845,10 @@ async def create_alert(payload: AlertCreate, user: dict = Depends(get_current_us
         summary=f"Nueva alerta ({payload.type})",
         meta={"type": payload.type},
     )
-    # Emit socket.io event to admins
-    await sio.emit("alert:new", alert, room="admins")
-    await sio.emit("alert:new", alert, room=f"org:{org_id}")
+    # Emit a lightweight event so media payloads never block the admin panel.
+    summary = alert_summary(alert)
+    await sio.emit("alert:new", summary, room="admins")
+    await sio.emit("alert:new", summary, room=f"org:{org_id}")
     # Send web push to admins (works even with browser closed)
     try:
         await send_push_to_admins(db, alert)
@@ -897,7 +916,8 @@ async def list_alerts(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     archived: Optional[bool] = None,
-    limit: int = Query(200, le=1000),
+    limit: int = Query(150, ge=1, le=500),
+    include_media: bool = False,
 ):
     if user["role"] == "admin" and not _has_permission(user, "alerts", "view"):
         raise HTTPException(status_code=403, detail="Sin permiso: alerts.view")
@@ -930,11 +950,12 @@ async def list_alerts(
         if date_to:
             time_q["$lte"] = date_to
         q["timestamp"] = time_q
-    alerts = (
-        await db.alerts.find(q, {"_id": 0})
-        .sort("timestamp", -1)
-        .to_list(limit)
-    )
+    projection = {"_id": 0}
+    if not include_media:
+        projection.update({"image_url": 0, "audio_url": 0, "history": 0})
+    alerts = await db.alerts.find(q, projection).sort("timestamp", -1).to_list(limit)
+    if not include_media:
+        alerts = [alert_summary(a) for a in alerts]
     return alerts
 
 
@@ -1004,8 +1025,9 @@ async def update_alert_status(
         summary=f"Alerta {payload.status}",
         meta={"from": prev_status, "to": payload.status, "note": payload.note},
     )
-    await sio.emit("alert:updated", updated, room="admins")
-    await sio.emit("alert:updated", updated, room=f"org:{alert['organization_id']}")
+    summary = alert_summary(updated)
+    await sio.emit("alert:updated", summary, room="admins")
+    await sio.emit("alert:updated", summary, room=f"org:{alert['organization_id']}")
     return updated
 
 

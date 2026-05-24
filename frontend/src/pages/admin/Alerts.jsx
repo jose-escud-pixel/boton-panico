@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import api from "../../lib/api";
+import api, { API_BASE } from "../../lib/api";
 import { useSocket } from "../../context/SocketContext";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -57,6 +57,17 @@ const TYPE_CFG = {
   normal:  { label: "NORMAL",     Icon: AlertTriangle, bg: "bg-amber-50 text-amber-700 border-amber-200" },
 };
 
+function resolveMediaUrl(url) {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:")) return url;
+  try {
+    const apiOrigin = /^https?:\/\//i.test(API_BASE) ? new URL(API_BASE).origin : window.location.origin;
+    return `${apiOrigin}${url.startsWith("/") ? "" : "/"}${url}`;
+  } catch {
+    return url;
+  }
+}
+
 function FlyTo({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -72,6 +83,7 @@ export default function Alerts() {
   const [chips, setChips] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [archiving, setArchiving] = useState(false);
@@ -87,8 +99,8 @@ export default function Alerts() {
     }
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       // Extrae valores de chips para query y filtrado cliente
       const statusChip = chips.find((c) => c.key === "status");
@@ -104,6 +116,7 @@ export default function Alerts() {
       if (user?.role === "super_admin" && activeOrgId && !isAll) {
         params.append("organization_id", activeOrgId);
       }
+      params.append("limit", "150");
       const { data } = await api.get(`/alerts?${params.toString()}`);
       let filtered = data;
       if (userChips.length > 0) {
@@ -128,8 +141,9 @@ export default function Alerts() {
       setAlerts(filtered);
     } catch (e) {
       console.error(e);
+      if (!silent) toast.error("No se pudieron cargar las alertas");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [chips, showArchived, activeOrgId, isAll, user]);
 
@@ -139,10 +153,10 @@ export default function Alerts() {
     if (!socket) return;
     const newHandler = () => {
       // El audio global lo maneja AlertAudioContext
-      load();
+      load({ silent: true });
     };
-    const updateHandler = () => load();
-    const archivedHandler = () => load();
+    const updateHandler = () => load({ silent: true });
+    const archivedHandler = () => load({ silent: true });
     socket.on("alert:new", newHandler);
     socket.on("alert:updated", updateHandler);
     socket.on("alerts:archived", archivedHandler);
@@ -177,6 +191,20 @@ export default function Alerts() {
     }
   };
 
+  const openAlertDetail = async (alert) => {
+    if (!alert?.id) return;
+    setSelected(alert);
+    setDetailLoading(true);
+    try {
+      const { data } = await api.get(`/alerts/${alert.id}`);
+      setSelected(data);
+    } catch {
+      toast.error("No se pudo cargar el detalle de la alerta");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const changeStatus = async (status) => {
     if (!selected) return;
     try {
@@ -189,7 +217,7 @@ export default function Alerts() {
         })
       );
       toast.success(`Estado actualizado a ${STATUS_LABEL[status]}`);
-      load();
+      load({ silent: true });
     } catch {
       toast.error("No se pudo actualizar");
     }
@@ -282,7 +310,7 @@ export default function Alerts() {
             {mapMarkers.map((a) => {
               const pos = [a.location.coordinates[1], a.location.coordinates[0]];
               return (
-                <Marker key={a.id} position={pos} eventHandlers={{ click: () => setSelected(a) }}>
+                <Marker key={a.id} position={pos} eventHandlers={{ click: () => openAlertDetail(a) }}>
                   <Popup>
                     <div className="text-xs">
                       <div className="font-bold">{a.user_name}</div>
@@ -309,16 +337,17 @@ export default function Alerts() {
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Organización</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Tipo</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Estado</TableHead>
+                <TableHead className="overline text-slate-500 dark:text-slate-400">Evidencia</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Hora</TableHead>
                 <TableHead className="overline text-slate-500 dark:text-slate-400">Teléfono</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && (
-                <TableRow><TableCell colSpan={6} className="text-slate-400 dark:text-slate-500 py-6">Cargando...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-slate-400 dark:text-slate-500 py-6">Cargando...</TableCell></TableRow>
               )}
               {!loading && alerts.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-slate-400 dark:text-slate-500 py-8 text-center">Sin alertas</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-slate-400 dark:text-slate-500 py-8 text-center">Sin alertas</TableCell></TableRow>
               )}
               {alerts.map((a) => {
                 const cfg = TYPE_CFG[a.type] || { label: a.type?.toUpperCase() || "?", bg: "" };
@@ -326,7 +355,7 @@ export default function Alerts() {
                   <TableRow
                     key={a.id}
                     className="border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/80 cursor-pointer"
-                    onClick={() => setSelected(a)}
+                    onClick={() => openAlertDetail(a)}
                     data-testid="alert-row"
                   >
                     <TableCell>
@@ -342,15 +371,34 @@ export default function Alerts() {
                     <TableCell>
                       <Badge className={`rounded ${STATUS_STYLE[a.status]}`}>{STATUS_LABEL[a.status]}</Badge>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {a.has_image && (
+                          <Badge variant="outline" className="rounded bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-200 dark:border-sky-800">
+                            <ImageIcon className="w-3 h-3 mr-1" strokeWidth={1.8} />
+                            Foto
+                          </Badge>
+                        )}
+                        {a.has_audio && (
+                          <Badge variant="outline" className="rounded bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/50 dark:text-violet-200 dark:border-violet-800">
+                            <Volume2 className="w-3 h-3 mr-1" strokeWidth={1.8} />
+                            Audio
+                          </Badge>
+                        )}
+                        {!a.has_image && !a.has_audio && (
+                          <span className="text-xs text-slate-400 dark:text-slate-500">—</span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-slate-500 dark:text-slate-400 text-xs font-mono-tactical">
                       {formatDistanceToNow(new Date(a.timestamp), { addSuffix: true, locale: es })}
                     </TableCell>
-                    <TableCell className="text-slate-700 dark:text-slate-200 text-sm font-mono-tactical">
+                    <TableCell className="text-slate-700 dark:text-white text-sm font-mono-tactical">
                       {a.user_phone ? (
                         <div className="flex items-center gap-1.5">
                           <a
                             href={`tel:${String(a.user_phone).replace(/\s+/g, "")}`}
-                            className="hover:underline text-slate-700"
+                            className="hover:underline text-slate-700 dark:text-white"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {a.user_phone}
@@ -361,7 +409,7 @@ export default function Alerts() {
                               e.stopPropagation();
                               copyText(a.user_phone, "Teléfono copiado");
                             }}
-                            className="text-slate-400 hover:text-slate-700"
+                            className="text-slate-400 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white"
                             title="Copiar teléfono"
                           >
                             <Copy className="w-3.5 h-3.5" strokeWidth={2} />
@@ -386,6 +434,8 @@ export default function Alerts() {
           {selected && (() => {
             const cfg = TYPE_CFG[selected.type] || { label: selected.type, Icon: AlertTriangle, bg: "" };
             const Icon = cfg.Icon;
+            const imageUrl = resolveMediaUrl(selected.image_url);
+            const audioUrl = resolveMediaUrl(selected.audio_url);
             return (
               <>
                 <DialogHeader>
@@ -402,13 +452,19 @@ export default function Alerts() {
                 </DialogHeader>
 
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                  {detailLoading && (
+                    <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                      Cargando detalle completo...
+                    </div>
+                  )}
+
                   {selected.user_phone && (
                     <div>
                       <p className="overline mb-1">Teléfono</p>
                       <div className="flex items-center gap-2">
                         <a
                           href={`tel:${String(selected.user_phone).replace(/\s+/g, "")}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-sm font-mono-tactical shadow-sm"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 dark:text-white dark:bg-emerald-900 dark:border-emerald-700 dark:hover:bg-emerald-800 text-sm font-mono-tactical shadow-sm"
                         >
                           <PhoneCall className="w-3.5 h-3.5" strokeWidth={2} />
                           {selected.user_phone}
@@ -416,7 +472,7 @@ export default function Alerts() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="rounded-md border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                          className="rounded-md border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:text-white dark:bg-emerald-900 dark:border-emerald-700 dark:hover:bg-emerald-800"
                           onClick={() => copyText(selected.user_phone, "Teléfono copiado")}
                         >
                           <Copy className="w-3.5 h-3.5 mr-1" strokeWidth={2} />
@@ -476,25 +532,44 @@ export default function Alerts() {
                     </div>
                   )}
 
-                  {selected.image_url && (
-                    <div>
-                      <p className="overline mb-1 flex items-center gap-1">
-                        <ImageIcon className="w-3 h-3" strokeWidth={1.8} /> Imagen
-                      </p>
-                      <img
-                        src={selected.image_url}
-                        alt="Evidencia"
-                        className="max-h-56 rounded-md border border-slate-200"
-                      />
+                  {(selected.image_url || selected.has_image) && (
+                    <div className="rounded-lg border border-sky-200 bg-sky-50/70 dark:bg-sky-950/30 dark:border-sky-800 p-3">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <p className="overline flex items-center gap-1 text-sky-800 dark:text-sky-200">
+                          <ImageIcon className="w-3 h-3" strokeWidth={1.8} /> Imagen de apoyo
+                        </p>
+                        {imageUrl && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 rounded-md border-sky-300 bg-white text-sky-800 hover:bg-sky-100 dark:bg-sky-900 dark:text-white dark:border-sky-700 dark:hover:bg-sky-800"
+                            onClick={() => window.open(imageUrl, "_blank", "noopener,noreferrer")}
+                          >
+                            Ver grande
+                          </Button>
+                        )}
+                      </div>
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt="Imagen de apoyo enviada con la alerta"
+                          className="w-full max-h-80 object-contain rounded-md border border-sky-200 bg-white dark:bg-slate-900 dark:border-sky-800"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-sky-800 dark:bg-slate-900 dark:text-sky-200 dark:border-sky-800">
+                          Cargando imagen de apoyo...
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {selected.audio_url && (
+                  {audioUrl && (
                     <div>
                       <p className="overline mb-1 flex items-center gap-1">
                         <Volume2 className="w-3 h-3" strokeWidth={1.8} /> Audio
                       </p>
-                      <audio controls src={selected.audio_url} className="w-full" />
+                      <audio controls src={audioUrl} className="w-full" />
                     </div>
                   )}
 

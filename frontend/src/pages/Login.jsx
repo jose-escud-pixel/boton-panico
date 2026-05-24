@@ -6,9 +6,11 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { OwlLogo } from "../components/OwlLogo";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { Download, Loader2, ShieldAlert, Smartphone } from "lucide-react";
+import { openApkDownload } from "../lib/apkDownload";
 
 const UI_VERSION = process.env.REACT_APP_UI_VERSION || "1.0";
+const CLIENT_APK_URL = "/boton-panico/downloads/nacurutu-latest.apk";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -129,6 +131,35 @@ export default function Login() {
               )}
             </Button>
           </form>
+
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <Button
+              type="button"
+              onClick={() => openApkDownload(CLIENT_APK_URL)}
+              className="group relative w-full min-h-[4.5rem] overflow-hidden rounded-xl bg-gradient-to-br from-rose-500 via-red-600 to-orange-500 text-white shadow-[0_16px_35px_-16px_rgba(225,29,72,0.85)] hover:from-rose-500 hover:via-red-500 hover:to-amber-500 border border-rose-300/40 transition-all duration-200 active:scale-[0.98]"
+              data-testid="download-client-apk-login"
+            >
+              <span className="absolute inset-0 bg-gradient-to-b from-white/25 via-transparent to-black/15 pointer-events-none" />
+              <span className="absolute -right-8 -top-10 w-28 h-28 rounded-full bg-white/20 blur-xl pointer-events-none transition-transform duration-300 group-hover:scale-125" />
+              <span className="relative flex items-center gap-3 text-left">
+                <span className="w-11 h-11 rounded-lg bg-white/20 border border-white/30 flex items-center justify-center shadow-inner">
+                  <Download className="w-6 h-6" strokeWidth={2.2} />
+                </span>
+                <span className="flex flex-col leading-tight">
+                  <span className="font-heading text-lg font-black tracking-tight">
+                    Descargar App Android
+                  </span>
+                  <span className="text-xs font-medium text-white/85">
+                    APK oficial para clientes
+                  </span>
+                </span>
+              </span>
+            </Button>
+            <div className="mt-3 flex items-center justify-center gap-2 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-md py-2">
+              <Smartphone className="w-4 h-4" strokeWidth={1.8} />
+              <span>Instalación directa para celulares Android</span>
+            </div>
+          </div>
         </div>
 
         <p className="text-center text-slate-400 text-xs mt-6 font-mono-tactical">
