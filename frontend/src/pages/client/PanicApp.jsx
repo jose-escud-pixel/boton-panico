@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
-import api, { formatApiError } from "../../lib/api";
+import api, { formatApiError, API_BASE } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
 import {
@@ -396,13 +396,43 @@ export default function PanicApp() {
       const location = await getLocation();
       if (imageFile) {
         try {
-          const fd = new FormData();
-          fd.append("file", imageFile, imageFile.name || "foto-alerta.jpg");
-          const { data: up } = await api.post("/uploads/image", fd, {
-            timeout: IMAGE_UPLOAD_TIMEOUT_MS,
-            headers: { "Content-Type": "multipart/form-data" },
-          });
-          uploadedImageUrl = up?.url || null;
+          if (isNative()) {
+            // En nativo, CapacitorHttp intercepta XHR y no serializa correctamente
+            // FormData con datos binarios. Solución: convertir a base64 y enviar
+            // como JSON usando CapacitorHttp directamente (sin pasar por Axios).
+            const base64DataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve(e.target.result);
+              reader.onerror = () => reject(new Error("No se pudo leer la imagen"));
+              reader.readAsDataURL(imageFile);
+            });
+            const token = localStorage.getItem("access_token");
+            const { CapacitorHttp } = await import("@capacitor/core");
+            const resp = await CapacitorHttp.post({
+              url: `${API_BASE}/uploads/image-base64`,
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                "X-App-Platform": "native",
+              },
+              data: { data: base64DataUrl, filename: imageFile.name || "foto-alerta.jpg" },
+              readTimeout: IMAGE_UPLOAD_TIMEOUT_MS,
+              connectTimeout: 15000,
+            });
+            if (resp.status >= 200 && resp.status < 300) {
+              uploadedImageUrl = resp.data?.url || null;
+            } else {
+              throw new Error(`Error al subir imagen: ${resp.status}`);
+            }
+          } else {
+            // En web, FormData con Axios funciona correctamente.
+            const fd = new FormData();
+            fd.append("file", imageFile, imageFile.name || "foto-alerta.jpg");
+            const { data: up } = await api.post("/uploads/image", fd, {
+              timeout: IMAGE_UPLOAD_TIMEOUT_MS,
+            });
+            uploadedImageUrl = up?.url || null;
+          }
         } catch (e) {
           console.warn("No se pudo adjuntar la foto:", e);
           toast.warning("La foto no pudo adjuntarse, pero enviaremos la alerta igual.", {

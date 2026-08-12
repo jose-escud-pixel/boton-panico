@@ -12,7 +12,7 @@ import { IS_ADMIN_BUILD } from "./buildMode";
  *   NO lo edites a mano; el script lo maneja.
  */
 export const APP_VERSION = "1.0.0";
-export const APP_BUILD = 56;
+export const APP_BUILD = 60;
 
 /**
  * URL del archivo version.json que publica el servidor.

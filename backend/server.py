@@ -897,6 +897,52 @@ async def upload_alert_image(
     return {"url": f"{base_path}/api/uploads/alerts/{stored_name}", "size": size}
 
 
+@api.post("/uploads/image-base64")
+async def upload_alert_image_base64(
+    payload: dict = Body(...),
+    user: dict = Depends(get_current_user),
+):
+    """Endpoint alternativo para apps nativas donde CapacitorHttp no maneja
+    FormData binario correctamente. Recibe la imagen como data URL en base64
+    y la guarda igual que el endpoint multipart normal."""
+    import base64 as _b64
+    _ = user  # autenticación requerida
+
+    data_url: str = payload.get("data", "")
+    filename: str = payload.get("filename", "foto-alerta.jpg")
+
+    if not data_url.startswith("data:image/"):
+        raise HTTPException(status_code=400, detail="Solo se permiten imágenes (data URL)")
+
+    # Separar encabezado de datos: "data:image/jpeg;base64,<datos>"
+    _, _, encoded = data_url.partition(",")
+    if not encoded:
+        raise HTTPException(status_code=400, detail="Formato de data URL inválido")
+
+    try:
+        image_bytes = _b64.b64decode(encoded)
+    except Exception:
+        raise HTTPException(status_code=400, detail="No se pudo decodificar la imagen base64")
+
+    if len(image_bytes) > UPLOAD_MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Imagen demasiado grande (máx 50MB)")
+
+    ext = Path(filename).suffix.lower() or ".jpg"
+    stored_name = f"{uuid.uuid4()}{ext}"
+    stored_path = UPLOAD_DIR / stored_name
+
+    try:
+        stored_path.write_bytes(image_bytes)
+    except Exception as e:
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar la imagen: {e}")
+
+    base_path = os.environ.get("PUBLIC_BASE_PATH", "/boton-panico").rstrip("/")
+    if not base_path.startswith("/"):
+        base_path = "/" + base_path
+    return {"url": f"{base_path}/api/uploads/alerts/{stored_name}", "size": len(image_bytes)}
+
+
 @api.get("/uploads/alerts/{filename}")
 async def get_uploaded_alert_image(filename: str):
     safe = Path(filename).name

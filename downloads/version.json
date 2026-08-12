@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "versionCode": 55,
+  "versionCode": 59,
   "apk_url": "/boton-panico/downloads/nacurutu-latest.apk",
   "build_mode": "client",
-  "changelog": "Build 2026-05-23 22:40",
-  "build_timestamp": "2026-05-24T01:40:24Z"
+  "changelog": "Build 2026-05-23 23:07",
+  "build_timestamp": "2026-05-24T02:07:03Z"
 }
