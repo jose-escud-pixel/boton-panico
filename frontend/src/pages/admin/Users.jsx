@@ -37,7 +37,7 @@ import ChipFilter from "../../components/ChipFilter";
 const ROLE_STYLE = {
   super_admin: "bg-rose-50 text-rose-700 border-rose-200",
   admin: "bg-amber-50 text-amber-700 border-amber-200",
-  client: "bg-slate-100 text-slate-700 border-slate-200",
+  client: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700",
 };
 
 const PERMISSION_MODULES = [
@@ -297,7 +297,7 @@ export default function Users() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="overline mb-2">Gestión</p>
-          <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Usuarios</h1>
+          <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Usuarios</h1>
         </div>
         <Button
           onClick={openCreate}
@@ -461,9 +461,9 @@ export default function Users() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-white border-slate-200 rounded-lg max-w-lg max-h-[88vh] flex flex-col" data-testid="user-form-dialog">
+        <DialogContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg max-w-lg max-h-[88vh] flex flex-col" data-testid="user-form-dialog">
           <DialogHeader>
-            <DialogTitle className="font-heading tracking-tight text-slate-900">
+            <DialogTitle className="font-heading tracking-tight text-slate-900 dark:text-white">
               {editing ? "Editar usuario" : "Nuevo usuario"}
             </DialogTitle>
             <DialogDescription className="text-slate-500 text-xs">
@@ -477,7 +477,7 @@ export default function Users() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
-                className="bg-white border-slate-200 rounded-md"
+                className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                 data-testid="user-name-input"
               />
             </div>
@@ -487,7 +487,7 @@ export default function Users() {
                 <Input
                   value={form.first_name || ""}
                   onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                  className="bg-white border-slate-200 rounded-md"
+                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                   data-testid="user-first-name-input"
                 />
               </div>
@@ -496,7 +496,7 @@ export default function Users() {
                 <Input
                   value={form.last_name || ""}
                   onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                  className="bg-white border-slate-200 rounded-md"
+                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                   data-testid="user-last-name-input"
                 />
               </div>
@@ -508,7 +508,7 @@ export default function Users() {
                 value={form.phone || ""}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 placeholder="+595 9XX XXX XXX"
-                className="bg-white border-slate-200 rounded-md"
+                className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                 data-testid="user-phone-input"
               />
             </div>
@@ -520,7 +520,7 @@ export default function Users() {
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required={false}
-                  className="bg-white border-slate-200 rounded-md"
+                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                   data-testid="user-email-input"
                 />
               </div>
@@ -535,7 +535,7 @@ export default function Users() {
                   placeholder="ej: jperez"
                   autoComplete="off"
                   required
-                  className="bg-white border-slate-200 rounded-md"
+                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                   data-testid="user-username-input"
                 />
               </div>
@@ -549,7 +549,7 @@ export default function Users() {
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required={!editing}
-                className="bg-white border-slate-200 rounded-md"
+                className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                 data-testid="user-password-input"
               />
             </div>
@@ -576,10 +576,10 @@ export default function Users() {
                   }
                   disabled={editing && me?.id === editing.id}
                 >
-                  <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-role-select">
+                  <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500" data-testid="user-role-select">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-white border-slate-200">
+                  <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-white">
                     <SelectItem value="client">Cliente</SelectItem>
                     {canCreateAdmin && <SelectItem value="admin">Admin</SelectItem>}
                     {canCreateAdmin && <SelectItem value="super_admin">Super Admin</SelectItem>}
@@ -593,10 +593,10 @@ export default function Users() {
                   onValueChange={(v) => setForm({ ...form, organization_id: v })}
                   disabled={me?.role !== "super_admin"}
                 >
-                  <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-org-select">
+                  <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500" data-testid="user-org-select">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-white border-slate-200">
+                  <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-white">
                     {orgs.map((o) => (
                       <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
                     ))}
@@ -605,7 +605,7 @@ export default function Users() {
               </div>
             </div>
 
-            <div className="border-t border-slate-200 pt-3 mt-2">
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-3 mt-2">
               <Label className="overline block mb-2">Control de acceso</Label>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -614,10 +614,10 @@ export default function Users() {
                     value={form.status}
                     onValueChange={(v) => setForm({ ...form, status: v })}
                   >
-                    <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-status-select">
+                    <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500" data-testid="user-status-select">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200">
+                    <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-white">
                       <SelectItem value="active">Activo</SelectItem>
                       <SelectItem value="disabled">Desactivado</SelectItem>
                     </SelectContent>
@@ -629,10 +629,10 @@ export default function Users() {
                     value={form.access_type}
                     onValueChange={(v) => setForm({ ...form, access_type: v })}
                   >
-                    <SelectTrigger className="bg-white border-slate-200 rounded-md" data-testid="user-access-type-select">
+                    <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500" data-testid="user-access-type-select">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200">
+                    <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-white">
                       <SelectItem value="permanent">Permanente</SelectItem>
                       <SelectItem value="annual">Anual</SelectItem>
                       <SelectItem value="custom">Personalizado</SelectItem>
@@ -648,7 +648,7 @@ export default function Users() {
                       type="date"
                       value={form.access_start || ""}
                       onChange={(e) => setForm({ ...form, access_start: e.target.value })}
-                      className="bg-white border-slate-200 rounded-md"
+                      className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                       data-testid="user-access-start-input"
                     />
                   </div>
@@ -658,7 +658,7 @@ export default function Users() {
                       type="date"
                       value={form.access_end || ""}
                       onChange={(e) => setForm({ ...form, access_end: e.target.value })}
-                      className="bg-white border-slate-200 rounded-md"
+                      className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white dark:placeholder:text-slate-500"
                       data-testid="user-access-end-input"
                     />
                   </div>
@@ -671,11 +671,11 @@ export default function Users() {
                 <Label className="overline block mb-2">Permisos por módulo</Label>
                 <div className="space-y-2">
                   {PERMISSION_MODULES.map((m) => (
-                    <div key={m.key} className="border border-slate-200 rounded-md p-2">
-                      <div className="text-xs font-semibold text-slate-700 mb-2">{m.label}</div>
+                    <div key={m.key} className="border border-slate-200 dark:border-slate-700 rounded-md p-2">
+                      <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">{m.label}</div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         {PERMISSION_ACTIONS.map((a) => (
-                          <label key={`${m.key}-${a}`} className="flex items-center gap-2 text-sm text-slate-700">
+                          <label key={`${m.key}-${a}`} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                             <Checkbox
                               checked={!!form.permissions?.[m.key]?.[a]}
                               onCheckedChange={(c) =>
@@ -702,7 +702,7 @@ export default function Users() {
               </div>
             )}
             {form.role === "client" && (
-              <div className="text-xs rounded-md border border-slate-200 bg-slate-50 text-slate-600 p-3">
+              <div className="text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 p-3">
                 Los clientes no requieren permisos administrativos. Solo acceden a la app cliente.
               </div>
             )}
@@ -712,7 +712,7 @@ export default function Users() {
               </div>
             )}
 
-            <DialogFooter className="sticky bottom-0 bg-white pt-2 border-t border-slate-200">
+            <DialogFooter className="sticky bottom-0 bg-white dark:bg-slate-900 pt-2 border-t border-slate-200 dark:border-slate-700">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="rounded-md">
                 Cancelar
               </Button>

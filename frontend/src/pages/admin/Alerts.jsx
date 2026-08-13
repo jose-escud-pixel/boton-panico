@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api, { API_BASE } from "../../lib/api";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import { useSocket } from "../../context/SocketContext";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -19,7 +20,7 @@ import { Label } from "../../components/ui/label";
 import { formatDistanceToNow, format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  MapPin, Image as ImageIcon, Volume2, Clock,
+  MapPin, Image as ImageIcon, Volume2, Clock, RefreshCw,
   Siren, Flame, HeartPulse, Wrench, AlertTriangle, Archive, Trash2, Copy, PhoneCall,
   FileDown,
 } from "lucide-react";
@@ -37,9 +38,9 @@ L.Icon.Default.mergeOptions({
 });
 
 const STATUS_STYLE = {
-  pending: "bg-rose-50 text-rose-700 border-rose-200",
-  in_process: "bg-amber-50 text-amber-700 border-amber-200",
-  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  pending:    "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800",
+  in_process: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+  completed:  "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
 };
 const STATUS_LABEL = {
   pending: "PENDIENTE",
@@ -48,13 +49,14 @@ const STATUS_LABEL = {
 };
 
 const TYPE_CFG = {
-  panic:   { label: "PÁNICO",     Icon: Siren,      bg: "bg-rose-50 text-rose-700 border-rose-200" },
-  fire:    { label: "INCENDIO",   Icon: Flame,      bg: "bg-orange-50 text-orange-700 border-orange-200" },
-  medical: { label: "ASISTENCIA", Icon: HeartPulse, bg: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  on_way:  { label: "UTILIDADES", Icon: Wrench,     bg: "bg-sky-50 text-sky-700 border-sky-200" },
-  here:    { label: "ESTOY AQUÍ", Icon: MapPin,     bg: "bg-violet-50 text-violet-700 border-violet-200" },
-  silent:  { label: "SILENCIOSA", Icon: Siren,      bg: "bg-rose-50 text-rose-700 border-rose-200" },
-  normal:  { label: "NORMAL",     Icon: AlertTriangle, bg: "bg-amber-50 text-amber-700 border-amber-200" },
+  panic:        { label: "PÁNICO",      Icon: Siren,         bg: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800" },
+  fire:         { label: "INCENDIO",    Icon: Flame,         bg: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800" },
+  medical:      { label: "ASISTENCIA",  Icon: HeartPulse,    bg: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800" },
+  on_way:       { label: "UTILIDADES",  Icon: Wrench,        bg: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800" },
+  here:         { label: "ESTOY AQUÍ",  Icon: MapPin,        bg: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800" },
+  silent:       { label: "SILENCIOSA",  Icon: Siren,         bg: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800" },
+  normal:       { label: "NORMAL",      Icon: AlertTriangle, bg: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800" },
+  device_alarm: { label: "ALARMA DISP", Icon: AlertTriangle, bg: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800" },
 };
 
 function resolveMediaUrl(url) {
@@ -148,6 +150,9 @@ export default function Alerts() {
   }, [chips, showArchived, activeOrgId, isAll, user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Auto-refresh cada 30s (pausado cuando hay un modal abierto)
+  useAutoRefresh(() => load({ silent: true }), 30_000, !selected && !confirmArchive);
 
   useEffect(() => {
     if (!socket) return;
@@ -250,6 +255,17 @@ export default function Alerts() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => load()}
+            disabled={loading}
+            className="rounded-md dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800"
+            title="Actualizar alertas"
+            data-testid="refresh-alerts-button"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} strokeWidth={1.8} />
+            Actualizar
+          </Button>
           {(user?.role === "super_admin" || user?.role === "admin") && (
             <Button
               variant="outline"
@@ -350,7 +366,7 @@ export default function Alerts() {
                 <TableRow><TableCell colSpan={7} className="text-slate-400 dark:text-slate-500 py-8 text-center">Sin alertas</TableCell></TableRow>
               )}
               {alerts.map((a) => {
-                const cfg = TYPE_CFG[a.type] || { label: a.type?.toUpperCase() || "?", bg: "" };
+                const cfg = TYPE_CFG[a.type] || { label: a.type?.toUpperCase() || "?", Icon: AlertTriangle, bg: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600" };
                 return (
                   <TableRow
                     key={a.id}
@@ -432,7 +448,7 @@ export default function Alerts() {
           data-testid="alert-detail-dialog"
         >
           {selected && (() => {
-            const cfg = TYPE_CFG[selected.type] || { label: selected.type, Icon: AlertTriangle, bg: "" };
+            const cfg = TYPE_CFG[selected.type] || { label: selected.type?.toUpperCase() || "?", Icon: AlertTriangle, bg: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600" };
             const Icon = cfg.Icon;
             const imageUrl = resolveMediaUrl(selected.image_url);
             const audioUrl = resolveMediaUrl(selected.audio_url);

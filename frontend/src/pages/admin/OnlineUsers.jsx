@@ -65,7 +65,7 @@ export default function OnlineUsers() {
             Usuarios en línea
           </h1>
         </div>
-        <Badge className="bg-slate-100 text-slate-700 border-slate-200">
+        <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700">
           <Activity className="w-3 h-3 mr-1" />
           {filtered.filter((r) => r.is_online).length} conectados
         </Badge>

@@ -1158,6 +1158,7 @@ export default function PanicApp() {
         </DialogContent>
       </Dialog>
 
+
       <ClientSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );

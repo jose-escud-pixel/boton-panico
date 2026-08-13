@@ -17,6 +17,8 @@ import Users from "./pages/admin/Users";
 import Organizations from "./pages/admin/Organizations";
 import OnlineUsers from "./pages/admin/OnlineUsers";
 import Audit from "./pages/admin/Audit";
+import Tickets from "./pages/admin/Tickets";
+import Devices from "./pages/admin/Devices";
 import PanicApp from "./pages/client/PanicApp";
 
 // Cambiar el título del documento según el build (cliente vs admin)
@@ -94,6 +96,8 @@ function App() {
                     <Route path="organizations" element={<Organizations />} />
                     <Route path="online-users" element={<OnlineUsers />} />
                     <Route path="audit" element={<Audit />} />
+                    <Route path="tickets" element={<Tickets />} />
+                    <Route path="devices" element={<Devices />} />
                   </Route>
                   <Route path="/" element={<RootRedirect />} />
                   <Route path="*" element={<Navigate to="/" replace />} />

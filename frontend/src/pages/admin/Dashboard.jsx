@@ -89,7 +89,7 @@ export default function Dashboard() {
     <div className="p-4 md:p-8 max-w-7xl mx-auto" data-testid="admin-dashboard">
       <div className="mb-8">
         <p className="overline mb-2">Panel principal</p>
-        <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900">
+        <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">
           Vista General
         </h1>
         <p className="text-slate-500 text-sm mt-1">Monitoreo en tiempo real de alertas de emergencia</p>
@@ -109,7 +109,7 @@ export default function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2 bg-white border-slate-200 rounded-lg">
+        <Card className="lg:col-span-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm overline">Últimos 7 días</CardTitle>
           </CardHeader>
@@ -122,7 +122,7 @@ export default function Dashboard() {
                   <YAxis stroke="#64748b" fontSize={11} allowDecimals={false} />
                   <Tooltip
                     contentStyle={{
-                      background: "#fff",
+                      background: "var(--tooltip-bg, #fff)",
                       border: "1px solid #e2e8f0",
                       borderRadius: 8,
                       color: "#0f172a",
@@ -135,7 +135,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-white border-slate-200 rounded-lg">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm overline">Por tipo</CardTitle>
           </CardHeader>
@@ -148,7 +148,7 @@ export default function Dashboard() {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      background: "#fff",
+                      background: "var(--tooltip-bg, #fff)",
                       border: "1px solid #e2e8f0",
                       borderRadius: 8,
                       color: "#0f172a",
@@ -161,24 +161,24 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-white border-slate-200 rounded-lg lg:col-span-1">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg lg:col-span-1">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm overline">Por estado</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {Object.entries(stats.by_status).map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
+              <div key={k} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2 last:border-0">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full" style={{ background: STATUS_COLOR[k] }} />
-                  <span className="text-sm text-slate-700">{STATUS_LABEL[k]}</span>
+                  <span className="text-sm text-slate-700 dark:text-slate-300">{STATUS_LABEL[k]}</span>
                 </div>
-                <span className="font-heading font-bold text-lg text-slate-900">{v}</span>
+                <span className="font-heading font-bold text-lg text-slate-900 dark:text-white">{v}</span>
               </div>
             ))}
           </CardContent>
         </Card>
 
-        <Card className="bg-white border-slate-200 rounded-lg lg:col-span-2">
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg lg:col-span-2">
           <CardHeader className="pb-2 flex-row items-center justify-between">
             <CardTitle className="text-sm overline flex items-center gap-2">
               <Volume2 className="w-3 h-3" strokeWidth={1.8} />
@@ -201,14 +201,14 @@ export default function Dashboard() {
                 return (
                   <div
                     key={a.id}
-                    className="animate-slide-in p-3 border-l-4 bg-slate-50 rounded-r-md"
+                    className="animate-slide-in p-3 border-l-4 bg-slate-50 dark:bg-slate-800/50 rounded-r-md"
                     style={{ borderLeftColor: STATUS_COLOR[a.status] }}
                     data-testid="alert-feed-item"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-heading font-semibold text-sm truncate text-slate-900">
+                          <span className="font-heading font-semibold text-sm truncate text-slate-900 dark:text-white">
                             {a.user_name}
                           </span>
                           <Badge variant="outline" className={`text-[0.6rem] h-4 px-1.5 rounded ${cfg.bg}`}>
@@ -244,7 +244,7 @@ function KpiCard({ label, value, icon: Icon, accent, testid }) {
   };
   return (
     <div
-      className="bg-white border border-slate-200 rounded-lg p-4 md:p-5 shadow-sm"
+      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 md:p-5 shadow-sm"
       data-testid={testid}
     >
       <div className="flex items-center justify-between mb-3">
@@ -253,7 +253,7 @@ function KpiCard({ label, value, icon: Icon, accent, testid }) {
           <Icon className="w-4 h-4" strokeWidth={1.8} />
         </div>
       </div>
-      <div className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900">{value}</div>
+      <div className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">{value}</div>
     </div>
   );
 }

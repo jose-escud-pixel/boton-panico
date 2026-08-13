@@ -103,7 +103,7 @@ export default function Organizations() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="overline mb-2">Gestión</p>
-          <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Organizaciones</h1>
+          <h1 className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Organizaciones</h1>
         </div>
         {canCreate && (
           <Button
@@ -116,11 +116,11 @@ export default function Organizations() {
         )}
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-slate-200 hover:bg-transparent">
+              <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent">
                 <TableHead className="overline text-slate-500">Logo</TableHead>
                 <TableHead className="overline text-slate-500">Nombre</TableHead>
                 <TableHead className="overline text-slate-500">Creada</TableHead>
@@ -129,22 +129,22 @@ export default function Organizations() {
             </TableHeader>
             <TableBody>
               {orgs.map((o) => (
-                <TableRow key={o.id} className="border-slate-100 hover:bg-slate-50" data-testid="org-row">
+                <TableRow key={o.id} className="border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50" data-testid="org-row">
                   <TableCell>
                     {o.logo_url ? (
-                      <img src={o.logo_url} alt={o.name} className="w-10 h-10 rounded-md object-cover border border-slate-200" />
+                      <img src={o.logo_url} alt={o.name} className="w-10 h-10 rounded-md object-cover border border-slate-200 dark:border-slate-700" />
                     ) : (
-                      <div className="w-10 h-10 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 text-xs">
+                      <div className="w-10 h-10 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs">
                         —
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="font-heading font-semibold text-slate-900">{o.name}</TableCell>
+                  <TableCell className="font-heading font-semibold text-slate-900 dark:text-white">{o.name}</TableCell>
                   <TableCell className="text-slate-500 text-xs font-mono-tactical">
                     {new Date(o.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(o)} className="text-slate-500 hover:text-slate-900" data-testid="edit-org-button">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(o)} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" data-testid="edit-org-button">
                       <Pencil className="w-4 h-4" strokeWidth={1.8} />
                     </Button>
                     {canCreate && (
@@ -164,9 +164,9 @@ export default function Organizations() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-white border-slate-200 rounded-lg max-w-lg" data-testid="org-form-dialog">
+        <DialogContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg max-w-lg" data-testid="org-form-dialog">
           <DialogHeader>
-            <DialogTitle className="font-heading tracking-tight text-slate-900">
+            <DialogTitle className="font-heading tracking-tight text-slate-900 dark:text-white">
               {editing ? "Editar organización" : "Nueva organización"}
             </DialogTitle>
             <DialogDescription className="text-slate-500 text-xs">
@@ -180,7 +180,7 @@ export default function Organizations() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
-                className="bg-white border-slate-200 rounded-md"
+                className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-md dark:text-white"
                 data-testid="org-name-input"
               />
             </div>
@@ -188,14 +188,14 @@ export default function Organizations() {
               <Label className="overline block mb-1.5">Logo</Label>
               <div className="flex items-center gap-3">
                 {form.logo_url ? (
-                  <img src={form.logo_url} alt="preview" className="w-16 h-16 rounded-md object-cover border border-slate-200" />
+                  <img src={form.logo_url} alt="preview" className="w-16 h-16 rounded-md object-cover border border-slate-200 dark:border-slate-700" />
                 ) : (
-                  <div className="w-16 h-16 rounded-md bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 text-xs">
+                  <div className="w-16 h-16 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs">
                     Sin logo
                   </div>
                 )}
                 <label className="flex-1 cursor-pointer">
-                  <div className="flex items-center justify-center gap-2 py-2 px-3 bg-white border border-slate-200 rounded-md hover:bg-slate-50 text-sm text-slate-700">
+                  <div className="flex items-center justify-center gap-2 py-2 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 text-sm text-slate-700 dark:text-slate-300">
                     <Upload className="w-4 h-4" strokeWidth={1.8} />
                     <span>Subir imagen</span>
                   </div>

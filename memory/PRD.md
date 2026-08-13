@@ -1,5 +1,43 @@
 # ÑACURUTU SEGURIDAD — Panic Button Multi-Tenant System
 
+## Convenciones de desarrollo
+
+### Refresco de datos (módulos nuevos)
+Todo módulo nuevo debe seguir este patrón — sin excepciones:
+
+1. **`useAutoRefresh` está desactivado globalmente** — el hook es un no-op. No crear `setInterval` ni timer de 30s en ningún módulo.
+2. **Socket.IO para tiempo real** — escuchar los eventos del módulo (`socket.on("…")`) y llamar `load({ silent: true })` al recibirlos.
+3. **Reload post-mutación** — después de cualquier acción que cambia datos (crear, editar, eliminar, responder, cambiar estado) llamar `load()` inmediatamente.
+4. **Botón manual "Actualizar"** — visible en el header de cada módulo. Usa el ícono `RefreshCw` de lucide-react con `animate-spin` mientras `loading === true`.
+
+Ejemplo mínimo:
+```jsx
+import { RefreshCw } from "lucide-react";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh"; // no-op, mantener por compatibilidad
+
+// Socket.IO — tiempo real
+useEffect(() => {
+  if (!socket) return;
+  const handler = () => load({ silent: true });
+  socket.on("modulo:evento", handler);
+  return () => socket.off("modulo:evento", handler);
+}, [socket, load]);
+
+// Post-mutación
+const crearAlgo = async () => {
+  await api.post("/algo", datos);
+  load(); // ← siempre después de mutar
+};
+
+// Botón en el header
+<button onClick={() => load()} disabled={loading}>
+  <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+  Actualizar
+</button>
+```
+
+
+
 ## Original Problem
 Full-stack multi-tenant panic button system with Admin Panel (real-time alerts, dashboard analytics, user/org management, Leaflet map) + Client Web App (PWA-like, mobile-first, giant red panic button with silent and normal alerts including text/image/audio/geolocation).
 

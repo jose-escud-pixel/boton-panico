@@ -81,7 +81,7 @@ export default function Audit() {
                     {r.ts ? format(new Date(r.ts), "PPp", { locale: es }) : "—"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="rounded text-[0.65rem]">
+                    <Badge variant="outline" className="rounded text-[0.65rem] dark:border-slate-600 dark:text-slate-200">
                       {r.action}
                     </Badge>
                   </TableCell>

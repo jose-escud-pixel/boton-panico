@@ -266,7 +266,7 @@ HikvisionEventType = Literal[
     "tamperdetection",# Tamper
 ]
 
-AlarmProtocol = Literal["http_webhook", "adm_cid", "sia_dcs"]
+AlarmProtocol = Literal["http_webhook", "adm_cid"]
 
 # Severidad de eventos ADM-CID / SIA DC-09
 # alarm   → crea alerta de emergencia en el sistema
@@ -329,9 +329,7 @@ class DeviceUpdate(BaseModel):
     alarm_brand: Optional[AlarmBrand] = None
     group_name: Optional[str] = None
     notes: Optional[str] = None
-    event_rules: Optional[List[EventRule]] = None          # Reglas de enrutamiento ADM-CID/SIA
-    watchdog_minutes: Optional[int] = None                 # 0 = desactivado
-    event_retention_days: Optional[int] = None             # Días a guardar historial (default 30)
+    event_rules: Optional[List[EventRule]] = None     # Reglas de enrutamiento ADM-CID
 
 
 class Device(BaseModel):
@@ -351,31 +349,9 @@ class Device(BaseModel):
     alarm_brand: AlarmBrand = "generic"
     alarm_account_code: Optional[str] = None  # Código ADM-CID de 4 chars hex (auto-generado)
     group_name: Optional[str] = None          # Grupo visual (ej: "Edificio A")
-    event_rules: List[EventRule] = Field(default_factory=list)  # Reglas Contact ID/SIA → severidad
-    watchdog_minutes: int = 0                # 0 = desactivado; N = crear alerta si sin señal N min
-    event_retention_days: int = 30           # Días a retener historial de eventos
+    event_rules: List[EventRule] = Field(default_factory=list)  # Reglas Contact ID → severidad
     notes: Optional[str] = None
     last_event_at: Optional[str] = None
     last_event_type: Optional[str] = None
-    last_seen_at: Optional[str] = None       # Última señal recibida (keepalive o evento)
+    last_seen_at: Optional[str] = None        # Última vez que el panel envió cualquier mensaje
     created_at: str = Field(default_factory=utc_now_iso)
-
-
-# ---------- Device Events (historial) ----------
-class DeviceEvent(BaseModel):
-    """Evento individual recibido desde un panel de alarma. Se persiste con TTL."""
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    device_id: str
-    device_name: Optional[str] = None
-    organization_id: Optional[str] = None
-    event_code: str
-    event_label: str
-    severity: EventSeverity
-    zone: Optional[str] = None
-    partition: Optional[str] = None
-    protocol: str = "sia_dc09"
-    is_restore: bool = False
-    archived: bool = False
-    timestamp: str = Field(default_factory=utc_now_iso)
-    expires_at: Optional[str] = None        # TTL calculado según event_retention_days del device
