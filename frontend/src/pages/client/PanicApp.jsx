@@ -21,7 +21,7 @@ import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { getNativeLocation, isNative } from "../../lib/nativePush";
-import { applyPowerButtonPref } from "../../lib/powerButtonPanic";
+// powerButtonPanic eliminado — reemplazado por comando de voz via Google Assistant
 import { readDeviceInfo, bindDeviceToBackend } from "../../lib/deviceBind";
 import { useTheme } from "../../context/ThemeContext";
 import ClientSettingsDialog from "../../components/ClientSettingsDialog";
@@ -262,9 +262,7 @@ export default function PanicApp() {
           console.warn("No se pudo solicitar permiso de ubicación:", e);
         }
       })();
-      // Si el usuario tenía activado el "power button panic", lo re-arrancamos
-      // (el servicio se mata en reboots del teléfono).
-      applyPowerButtonPref();
+      // Comando de voz vía Google Assistant — no requiere ninguna inicialización nativa.
 
       // Device binding: primera vez que abre la app tras login se captura
       // info del teléfono y se vincula al usuario. Si el servidor detecta
@@ -311,21 +309,30 @@ export default function PanicApp() {
     };
   }, [imagePicking]);
 
-  // Deep link listener: cuando el servicio nativo dispara 5 presiones del
-  // power button, abre la app con URL `nacurutu://panic?source=power_button`.
-  // Al detectarla, disparamos pánico automáticamente.
+  // Deep link listener para nacurutu://panic?source=assistant (OK Google)
+  // y nacurutu://panic?source=power_button (legado).
+  // Dos mecanismos complementarios:
+  //   1. appUrlOpen → app ya en memoria, recibe onNewIntent
+  //   2. getLaunchUrl() → app abierta en frío por el intent
   useEffect(() => {
     if (!isNative()) return;
     let listenerHandle = null;
+
+    const handlePanicUrl = (url) => {
+      if (!url || !url.startsWith("nacurutu://panic")) return;
+      const params = new URL(url.replace("nacurutu://", "https://nacurutu/")).searchParams;
+      const source = params.get("source") || "assistant";
+      triggerDeepLinkPanic(source);
+    };
+
     (async () => {
       try {
         const { App } = await import("@capacitor/app");
         listenerHandle = await App.addListener("appUrlOpen", (event) => {
-          if (event?.url && event.url.startsWith("nacurutu://panic")) {
-            // Dispara pánico SIN countdown (emergencia real)
-            triggerPowerButtonPanic();
-          }
+          handlePanicUrl(event?.url);
         });
+        const launch = await App.getLaunchUrl();
+        handlePanicUrl(launch?.url);
       } catch (e) {
         console.warn("No se pudo registrar listener de deep link:", e);
       }
@@ -469,28 +476,42 @@ export default function PanicApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeType, sending, imageProcessing, message, imageFile, audioDataUrl, enqueueOfflineAlert, loadHistory]);
 
-  // Dispara pánico INMEDIATO sin countdown ni dialog (llamado desde deep link
-  // cuando el usuario presionó 5 veces el botón de encendido).
-  const triggerPowerButtonPanic = useCallback(async () => {
+  // Dispara pánico INMEDIATO sin countdown ni dialog.
+  // Llamado desde deep link nacurutu://panic?source=voice (detección de voz)
+  // o nacurutu://panic?source=assistant (OK Google) o source=power_button (legado).
+  const triggerDeepLinkPanic = useCallback(async (source = "voice") => {
     if (sending) return;
     setSending(true);
     setShake(true);
     setTimeout(() => setShake(false), 500);
     if (navigator.vibrate) navigator.vibrate([200, 100, 400]);
+
+    const msgMap = {
+      voice:        "Pánico por detección de voz",
+      assistant:    "Pánico por comando de voz (OK Google)",
+      power_button: "Pánico por botón de encendido",
+    };
+    const toastMap = {
+      voice:        "Pánico enviado por detección de voz",
+      assistant:    "Pánico enviado por comando de voz",
+      power_button: "Pánico enviado",
+    };
+
     try {
       const location = await getLocation();
       const body = {
         type: "panic",
-        message: "Pánico automático (botón de encendido x4)",
+        message: msgMap[source] || "Pánico por voz",
         image_url: null,
         audio_url: null,
         location,
       };
       try {
         await api.post("/alerts", body);
-        toast.success("Pánico enviado por botón de encendido", {
-          description: "Ayuda en camino. Mantén la calma.",
-        });
+        toast.success(
+          toastMap[source] || "Pánico enviado",
+          { description: "Ayuda en camino. Mantén la calma." }
+        );
       } catch (e) {
         if (!shouldQueueOffline(e)) throw e;
         enqueueOfflineAlert(body);

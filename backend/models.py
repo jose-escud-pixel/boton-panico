@@ -1,6 +1,6 @@
 """Pydantic models for the ÑACURUTU SEGURIDAD panic system."""
 from datetime import datetime, timezone
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict
 import uuid
 
 from pydantic import BaseModel, Field, EmailStr, ConfigDict, model_validator
@@ -314,6 +314,10 @@ class DeviceCreate(BaseModel):
     alarm_brand: AlarmBrand = "generic"               # Marca del panel de alarma
     group_name: Optional[str] = None                  # Grupo visual (ej: "Edificio A", "Piso 3")
     notes: Optional[str] = None
+    watchdog_minutes: int = 0
+    watchdog_notify: bool = True
+    event_retention_days: int = 30
+    areas: Dict[str, str] = Field(default_factory=dict)  # { "area_id": "Nombre personalizado" }
 
 
 class DeviceUpdate(BaseModel):
@@ -331,7 +335,9 @@ class DeviceUpdate(BaseModel):
     notes: Optional[str] = None
     event_rules: Optional[List[EventRule]] = None          # Reglas de enrutamiento ADM-CID/SIA
     watchdog_minutes: Optional[int] = None                 # 0 = desactivado
+    watchdog_notify: Optional[bool] = None                 # True = crear alerta; False = solo marcar offline
     event_retention_days: Optional[int] = None             # Días a guardar historial (default 30)
+    areas: Optional[Dict[str, str]] = None                 # Nombres personalizados de áreas { "501": "Oficina" }
 
 
 class Device(BaseModel):
@@ -352,8 +358,10 @@ class Device(BaseModel):
     alarm_account_code: Optional[str] = None  # Código ADM-CID de 4 chars hex (auto-generado)
     group_name: Optional[str] = None          # Grupo visual (ej: "Edificio A")
     event_rules: List[EventRule] = Field(default_factory=list)  # Reglas Contact ID/SIA → severidad
-    watchdog_minutes: int = 0                # 0 = desactivado; N = crear alerta si sin señal N min
+    watchdog_minutes: int = 0                # 0 = desactivado; N = marcar offline si sin señal N min
+    watchdog_notify: bool = True             # True = crear alerta además de marcar offline; False = solo marcar offline
     event_retention_days: int = 30           # Días a retener historial de eventos
+    areas: Dict[str, str] = Field(default_factory=dict)  # Nombres de áreas { "501": "Oficina" }
     notes: Optional[str] = None
     last_event_at: Optional[str] = None
     last_event_type: Optional[str] = None

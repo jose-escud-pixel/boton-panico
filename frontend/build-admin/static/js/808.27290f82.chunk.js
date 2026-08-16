@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkfrontend=globalThis.webpackChunkfrontend||[]).push([[808],{808(e,n,p){p.d(n,{App:()=>t});const t=(0,p(9344).registerPlugin)("App",{web:()=>p.e(970).then(p.bind(p,6970)).then(e=>new e.AppWeb)})}}]);

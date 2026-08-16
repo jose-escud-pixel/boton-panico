@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkfrontend=globalThis.webpackChunkfrontend||[]).push([[471],{4471(e,n,i){i.d(n,{Device:()=>t});const t=(0,i(9344).registerPlugin)("Device",{web:()=>i.e(933).then(i.bind(i,8933)).then(e=>new e.DeviceWeb)})}}]);

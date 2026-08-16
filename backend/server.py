@@ -198,7 +198,8 @@ def _parse_alarm_message(raw: str) -> dict | None:
         # Keepalive / null
         if '"NULL"' in raw or '"null"' in raw:
             acct_m = _re.search(r'#([0-9A-Fa-f]+)', raw)
-            return {"keepalive": True, "account": (acct_m.group(1).upper() if acct_m else ""), "protocol": "sia_dc09"}
+            seq_m  = _re.search(r'"(?:NULL|null)"\s*([0-9A-Fa-f]{4})', raw)
+            return {"keepalive": True, "account": (acct_m.group(1).upper() if acct_m else ""), "seq": (seq_m.group(1) if seq_m else "0000"), "protocol": "sia_dc09"}
 
         # Account code
         acct_m = _re.search(r'#([0-9A-Fa-f]+)', raw)
@@ -240,15 +241,38 @@ def _parse_alarm_message(raw: str) -> dict | None:
             logger.warning(f"SIA: bloque de evento no reconocido en: {raw!r}")
             qualifier, event_code, partition, zone = "N", "UNK", "01", "000"
 
+        # Hikvision D2APS: arm/disarm llega como RI con identificador /NLxxx o /OPxxx
+        # NL = Normal Lock (armado) → CL; OP = Open (desarmado) → OP
+        area_id = None
+        if event_code == "RI":
+            src = data_block or raw
+            nl_m = _re.search(r'/NL(\d+)', src)
+            op_m = _re.search(r'/OP(\d+)', src)
+            if nl_m:
+                event_code = "CL"
+                area_id = nl_m.group(1)
+            elif op_m:
+                event_code = "OP"
+                area_id = op_m.group(1)
+
+        # Intentar extraer descripción de área del panel (ej: [SArea 1] → "Area 1")
+        area_label_panel = None
+        for blk in _re.findall(r'\[([^\]]+)\]', raw):
+            if blk.startswith("S") and len(blk) > 1:
+                area_label_panel = blk[1:]  # quitar "S" del inicio
+                break
+
         return {
-            "account":    account,
-            "event_code": event_code,
-            "partition":  partition,
-            "zone":       zone,
-            "is_restore": qualifier == "R",
-            "protocol":   "sia_dc09",
-            "seq":        seq,
-            "keepalive":  False,
+            "account":          account,
+            "event_code":       event_code,
+            "partition":        partition,
+            "zone":             zone,
+            "is_restore":       qualifier == "R",
+            "protocol":         "sia_dc09",
+            "seq":              seq,
+            "keepalive":        False,
+            "area_id":          area_id,           # ej: "501" de /NL501
+            "area_label_panel": area_label_panel,  # ej: "Area 1" de [SArea 1]
         }
 
     # ── Contact ID puro sobre TCP ─────────────────────────────────────────
@@ -281,14 +305,33 @@ def _parse_alarm_message(raw: str) -> dict | None:
     return None
 
 
+def _crc16_arc(data: bytes) -> int:
+    """CRC-16/ARC (aka IBM): poly=0x8005, init=0, refin=True, refout=True.
+    Usado por Hikvision en SIA DC-09 -- verificado contra mensajes reales de panel.
+    """
+    crc = 0x0000
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            if crc & 0x0001:
+                crc = (crc >> 1) ^ 0xA001  # 0xA001 = bit-reverse de 0x8005
+            else:
+                crc >>= 1
+    return crc
+
+
 def _build_ack(parsed: dict, account: str = "") -> bytes:
-    """Construye ACK apropiado según el protocolo detectado."""
+    """Construye ACK SIA DC-09 con formato completo: LF CRC LEN payload CR"""
     if parsed.get("protocol") == "sia_dc09":
-        seq = parsed.get("seq", "0000")
+        seq  = parsed.get("seq", "0000")
         acct = account or parsed.get("account", "0000")
-        return f'"ACK"{seq}R000L000#{acct}\r\n'.encode("ascii")
-    # Contact ID: ACK simple
-    return b""
+        payload  = f'"ACK"{seq}R0L0#{acct}[]'
+        msg_len  = f"{len(payload):04X}"
+        crc      = _crc16_arc(payload.encode("ascii"))
+        return f"\n{crc:04X}{msg_len}{payload}\r".encode("ascii")
+    # Contact ID: ACK simple (0x06)
+    return bytes([0x06])
+
 
 
 def _event_to_alert_type(parsed: dict):
@@ -299,15 +342,15 @@ def _event_to_alert_type(parsed: dict):
     if len(code) == 2:
         # SIA de 2 letras
         t = SIA_CODE_TO_ALERT_TYPE.get(code)
-        if t is None and code in ("RP", "CA", "CL", "OP"):
-            return None  # test / arm / disarm → ignorar
+        if t is None and code in ("RP", "CA", "CL", "OP", "RI", "RR", "RB"):
+            return None  # test / arm / disarm / poll → ignorar
         return t or "device_alarm"
     else:
         # CID de 3 dígitos
         return _cid_code_to_alert_type(code)
 
 
-def _event_label(parsed: dict) -> str:
+def _event_label(parsed: dict, areas_map: dict | None = None) -> str:
     """Mensaje legible del evento para mostrar en la alerta."""
     code = parsed.get("event_code", "")
     zone = parsed.get("zone", "000")
@@ -315,6 +358,22 @@ def _event_label(parsed: dict) -> str:
         label = SIA_CODE_LABELS.get(code, f"Evento {code}")
     else:
         label = _cid_label(code)
+
+    # Para armado/desarmado: agregar nombre de área si está configurado
+    if code in ("CL", "OP"):
+        area_id  = parsed.get("area_id")        # ej: "501" extraído de /NL501
+        area_panel = parsed.get("area_label_panel")  # ej: "Area 1" del mensaje del panel
+        area_name = None
+        if areas_map and area_id:
+            area_name = areas_map.get(area_id)  # nombre configurado por el admin
+        if not area_name and area_panel:
+            area_name = area_panel              # fallback al nombre que envía el panel
+        elif not area_name and area_id:
+            area_name = f"Área {int(area_id)}" if area_id.isdigit() else f"Área {area_id}"
+        if area_name:
+            label = f"{label} · {area_name}"
+        return label
+
     if zone and zone != "000":
         try:
             label += f" · Zona {int(zone):03d}"
@@ -355,9 +414,12 @@ _DEFAULT_SIA_SEVERITY = {
     "A": "info",    # AT=corte energía, AR=restauración energía
     "T": "info",    # TA=tamper, TR=tamper restaurado
     "Y": "info",    # YX=fallo comm, YS=pérdida señal, YR=restauración comm
-    # Armado / desarmado / programación → ignorar
-    "C": "ignore",  # CL=armado, CS=fin programación
-    "O": "ignore",  # OP=desarmado, OS=inicio programación
+    # Armado / desarmado → info (guardar historial, no crear alerta)
+    "CL": "info",   # armado   — Hikvision AX Pro
+    "OP": "info",   # desarmado — Hikvision AX Pro
+    # Programación → ignorar
+    "C": "ignore",  # CS=fin programación y otros C
+    "O": "ignore",  # OS=inicio programación y otros O
     "R": "ignore",  # RP=test periódico, RA=restauración general
     # Desconocido
     "U": "info",    # UNK (parse fallback)
@@ -397,8 +459,9 @@ def _get_event_severity(event_code: str, event_rules: list) -> str:
         # Contact ID numérico → usar primera cifra
         return _DEFAULT_CID_SEVERITY.get(qualifier[0], "alarm")
     elif qualifier:
-        # SIA alfabético → usar primera letra
-        return _DEFAULT_SIA_SEVERITY.get(qualifier[0], "alarm")
+        # SIA alfabético → código exacto (2 letras) primero, luego primera letra
+        return _DEFAULT_SIA_SEVERITY.get(qualifier[:2]) \
+            or _DEFAULT_SIA_SEVERITY.get(qualifier[0], "alarm")
 
     return "alarm"
 
@@ -1853,8 +1916,8 @@ async def create_device(payload: DeviceCreate, user: dict = Depends(require_admi
 
     device_data = payload.model_dump()
 
-    # Auto-generar Account Code para protocolo ADM-CID
-    if device_data.get("alarm_protocol") == "adm_cid" and not device_data.get("alarm_account_code"):
+    # Auto-generar Account Code para protocolo ADM-CID o SIA-DCS
+    if device_data.get("alarm_protocol") in ("adm_cid", "sia_dcs") and not device_data.get("alarm_account_code"):
         device_data["alarm_account_code"] = await _generate_account_code()
 
     device = Device(**device_data, organization_name=org.get("name"))
@@ -1877,9 +1940,11 @@ async def update_device(device_id: str, payload: DeviceUpdate, user: dict = Depe
             raise HTTPException(404, "Organización no encontrada")
         update["organization_name"] = org.get("name")
 
-    # Si cambia a adm_cid o sia_dcs y no tiene account code, auto-generar
-    new_proto = update.get("alarm_protocol")
-    if new_proto in ("adm_cid", "sia_dcs") and not doc.get("alarm_account_code"):
+    # Si el protocolo final es adm_cid/sia_dcs y el dispositivo no tiene account code, auto-generar
+    # Cubre tanto cambio de protocolo como dispositivos creados antes del fix (code=None)
+    current_proto = doc.get("alarm_protocol", "")
+    final_proto = update.get("alarm_protocol", current_proto)
+    if final_proto in ("adm_cid", "sia_dcs") and not doc.get("alarm_account_code"):
         update["alarm_account_code"] = await _generate_account_code()
 
     await db.devices.update_one({"id": device_id}, {"$set": update})
@@ -1922,6 +1987,18 @@ async def archive_device_events(device_id: str, user: dict = Depends(require_adm
         {"$set": {"archived": True}},
     )
     return {"archived": result.modified_count}
+
+
+@api.patch("/devices/{device_id}/events/{event_id}/archive", status_code=200)
+async def archive_single_event(device_id: str, event_id: str, user: dict = Depends(require_admin)):
+    """Archiva un evento individual."""
+    result = await db.device_events.update_one(
+        {"id": event_id, "device_id": device_id},
+        {"$set": {"archived": True}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    return {"ok": True}
 
 
 @api.delete("/devices/{device_id}/events/archived", status_code=200)
@@ -2144,10 +2221,11 @@ async def _save_device_event(parsed: dict, device: dict, severity: str) -> None:
             "device_name": device.get("name", ""),
             "organization_id": device.get("organization_id"),
             "event_code": parsed.get("event_code", ""),
-            "event_label": _event_label(parsed),
+            "event_label": _event_label(parsed, device.get("areas")),
             "severity": severity,
             "zone": parsed.get("zone"),
             "partition": parsed.get("partition"),
+            "area_id": parsed.get("area_id"),
             "protocol": parsed.get("protocol", "sia_dc09"),
             "is_restore": parsed.get("is_restore", False),
             "archived": False,
@@ -2183,6 +2261,21 @@ async def _watchdog_loop() -> None:
 
                 if diff_min < threshold:
                     continue  # dentro del rango → OK
+
+                # Si watchdog_notify=False: solo marcar tcp_connected=False (sin alerta)
+                if not device.get("watchdog_notify", True):
+                    now_iso_wd = datetime.now(timezone.utc).isoformat()
+                    await db.devices.update_one(
+                        {"id": device["id"]},
+                        {"$set": {"tcp_connected": False}},
+                    )
+                    dc_wd = {"device_id": device["id"], "tcp_connected": False,
+                             "timestamp": now_iso_wd, "organization_id": device.get("organization_id")}
+                    await sio.emit("device:tcp_status", dc_wd, room="admins")
+                    if device.get("organization_id"):
+                        await sio.emit("device:tcp_status", dc_wd, room=f"org:{device['organization_id']}")
+                    logger.info(f"Watchdog (sin alerta): panel {device.get('name')} sin señal {int(diff_min)} min → solo offline")
+                    continue
 
                 # Evitar spam: solo crear alerta si no hay una reciente (últimas 2*threshold min)
                 spam_window = now - timedelta(minutes=threshold * 2)
@@ -2244,7 +2337,7 @@ async def _process_alarm_event(parsed: dict, device: dict) -> None:
       ignore  → descarta silenciosamente
     """
     event_code = parsed.get("event_code", "")
-    event_label = _event_label(parsed)
+    event_label = _event_label(parsed, device.get("areas"))
     protocol_tag = "SIA DC-09" if parsed.get("protocol") == "sia_dc09" else "Contact ID"
     now_iso = datetime.now(timezone.utc).isoformat()
     org_id = device.get("organization_id")
@@ -2262,6 +2355,19 @@ async def _process_alarm_event(parsed: dict, device: dict) -> None:
             "last_seen_at": now_iso,
         }},
     )
+
+    # Notificar al frontend para actualizar badge online en tiempo real
+    await sio.emit("device:last_seen", {
+        "device_id": device["id"],
+        "last_seen_at": now_iso,
+        "organization_id": org_id,
+    }, room="admins")
+    if org_id:
+        await sio.emit("device:last_seen", {
+            "device_id": device["id"],
+            "last_seen_at": now_iso,
+            "organization_id": org_id,
+        }, room=f"org:{org_id}")
 
     # ── Persistir en device_events (historial) ────────────────────────────
     await _save_device_event(parsed, device, severity)
@@ -2284,6 +2390,25 @@ async def _process_alarm_event(parsed: dict, device: dict) -> None:
         await sio.emit("device:event_received", live_event, room="admins")
         if org_id:
             await sio.emit("device:event_received", live_event, room=f"org:{org_id}")
+
+    # ── Capturar estado armado/desarmado (CL = armado, OP = desarmado) ──────
+    if event_code in ("CL", "OP"):
+        arm_state = "armed" if event_code == "CL" else "disarmed"
+        await db.devices.update_one(
+            {"id": device["id"]},
+            {"$set": {"arm_state": arm_state, "arm_state_at": now_iso}},
+        )
+        arm_payload = {
+            "device_id": device["id"],
+            "device_name": device.get("name", ""),
+            "arm_state": arm_state,
+            "timestamp": now_iso,
+            "organization_id": org_id,
+        }
+        await sio.emit("device:arm_state_changed", arm_payload, room="admins")
+        if org_id:
+            await sio.emit("device:arm_state_changed", arm_payload, room=f"org:{org_id}")
+        logger.info(f"Estado panel: {device.get('name')} → {arm_state}")
 
     # ── Aplicar severidad ─────────────────────────────────────────────────
     if severity == "ignore":
@@ -2363,6 +2488,7 @@ async def handle_adm_cid_client(reader: asyncio.StreamReader, writer: asyncio.St
     """
     addr = writer.get_extra_info("peername")
     logger.info(f"Alarm TCP: conexión desde {addr}")
+    connected_device_ids = set()   # devices vistos en esta conexión TCP
     try:
         buffer = b""
         while not reader.at_eof():
@@ -2374,11 +2500,33 @@ async def handle_adm_cid_client(reader: asyncio.StreamReader, writer: asyncio.St
             if not chunk:
                 break
 
+            logger.info(f"Alarm TCP [{addr}]: {len(chunk)}B: {chunk!r}")
             buffer += chunk
 
-            # Procesar líneas completas (\r o \n)
-            while b"\n" in buffer:
-                line, buffer = buffer.split(b"\n", 1)
+            # Si no hay terminador de línea, esperar 1s más por si el panel manda en dos partes
+            # (algunos firmwares Hikvision mandan SIA sin \r\n final)
+            if b"\n" not in buffer and b"\r" not in buffer and buffer:
+                logger.info(f"Alarm TCP [{addr}]: sin terminador, esperando 1s: {buffer!r}")
+                try:
+                    extra = await asyncio.wait_for(reader.read(1024), timeout=1.0)
+                    if extra:
+                        logger.info(f"Alarm TCP [{addr}]: extra {len(extra)}B: {extra!r}")
+                        buffer += extra
+                except asyncio.TimeoutError:
+                    # Timeout — el panel mandó datos sin \r\n; procesar el buffer como línea completa
+                    logger.info(f"Alarm TCP [{addr}]: timeout 1s — procesando buffer sin terminador")
+                    buffer += b"\n"
+                except (ConnectionResetError, OSError):
+                    # Panel mandó RST — procesar lo que tenemos antes de que cierre
+                    logger.info(f"Alarm TCP [{addr}]: RST recibido — procesando buffer sin terminador")
+                    buffer += b"\n"
+
+            # Procesar líneas completas — cortar en \n o \r (compatibilidad SIA-DCS y Contact ID)
+            while b"\n" in buffer or b"\r" in buffer:
+                if b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                else:
+                    line, buffer = buffer.split(b"\r", 1)
                 raw = line.decode("ascii", errors="replace").strip()
                 if not raw:
                     continue
@@ -2415,6 +2563,24 @@ async def handle_adm_cid_client(reader: asyncio.StreamReader, writer: asyncio.St
                     logger.warning(f"Alarm TCP: account code desconocido: {account_code!r}")
                     continue
 
+                # Registrar conexión TCP activa (primera vez que este device envía en esta sesión)
+                if device["id"] not in connected_device_ids:
+                    connected_device_ids.add(device["id"])
+                    now_conn = datetime.now(timezone.utc).isoformat()
+                    await db.devices.update_one(
+                        {"id": device["id"]},
+                        {"$set": {"tcp_connected": True, "tcp_connected_at": now_conn}},
+                    )
+                    conn_payload = {
+                        "device_id": device["id"],
+                        "tcp_connected": True,
+                        "timestamp": now_conn,
+                        "organization_id": device.get("organization_id"),
+                    }
+                    await sio.emit("device:tcp_status", conn_payload, room="admins")
+                    if device.get("organization_id"):
+                        await sio.emit("device:tcp_status", conn_payload, room=f"org:{device['organization_id']}")
+
                 # Keepalive / poll: actualizar last_seen_at sin crear alerta
                 if parsed.get("keepalive"):
                     now_iso = datetime.now(timezone.utc).isoformat()
@@ -2422,6 +2588,11 @@ async def handle_adm_cid_client(reader: asyncio.StreamReader, writer: asyncio.St
                         {"id": device["id"]},
                         {"$set": {"last_seen_at": now_iso}},
                     )
+                    await sio.emit("device:last_seen", {
+                        "device_id": device["id"],
+                        "last_seen_at": now_iso,
+                        "organization_id": device.get("organization_id"),
+                    }, room="admins")
                     continue
 
                 await _process_alarm_event(parsed, device)
@@ -2429,6 +2600,10 @@ async def handle_adm_cid_client(reader: asyncio.StreamReader, writer: asyncio.St
     except Exception as exc:
         logger.warning(f"Alarm TCP: error {addr}: {exc}")
     finally:
+        # NO marcamos tcp_connected=False al cerrar la conexión:
+        # los paneles poll-based (Hikvision AX Pro) se desconectan después de cada mensaje
+        # y reconectan cada N segundos — marcar offline inmediatamente sería incorrecto.
+        # El watchdog se encarga de marcar offline si no hay señal en watchdog_minutes.
         try:
             writer.close()
             await writer.wait_closed()

@@ -1,1 +1,0 @@
-"use strict";(globalThis.webpackChunkfrontend=globalThis.webpackChunkfrontend||[]).push([[914],{914(s,i,n){n.d(i,{PushNotifications:()=>o});const o=(0,n(9344).F3)("PushNotifications",{})}}]);

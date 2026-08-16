@@ -339,8 +339,10 @@ PERMS_NEEDED=(
     "android.permission.WAKE_LOCK"
     "android.permission.FOREGROUND_SERVICE"
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+    "android.permission.FOREGROUND_SERVICE_MICROPHONE"
     "android.permission.SYSTEM_ALERT_WINDOW"
     "android.permission.USE_FULL_SCREEN_INTENT"
+    "android.permission.RECEIVE_BOOT_COMPLETED"
 )
 
 log "Paso 7d — Verificando permisos en AndroidManifest.xml..."
@@ -372,6 +374,18 @@ else
     log "   + Copiado PowerButtonPlugin.java"
     log "   + Copiado PowerButtonService.java"
 
+    # Copiar plugin de escucha de voz por micrófono
+    cp "$PLUGIN_SRC_DIR/MicListenerPlugin.java" "$JAVA_PKG_DIR/MicListenerPlugin.java"
+    cp "$PLUGIN_SRC_DIR/MicListenerService.java" "$JAVA_PKG_DIR/MicListenerService.java"
+    log "   + Copiado MicListenerPlugin.java"
+    log "   + Copiado MicListenerService.java"
+
+    # Copiar BootReceiver (reinicio automático de servicios tras reboot del celular)
+    if [ -f "$PLUGIN_SRC_DIR/BootReceiver.java" ]; then
+        cp "$PLUGIN_SRC_DIR/BootReceiver.java" "$JAVA_PKG_DIR/BootReceiver.java"
+        log "   + Copiado BootReceiver.java"
+    fi
+
     # Registrar plugin en MainActivity.java — sobrescribir con versión conocida
     # (evita errores de sed si el archivo original era de una sola línea).
     MAIN_ACTIVITY="$JAVA_PKG_DIR/MainActivity.java"
@@ -385,6 +399,20 @@ else
         SERVICE_BLOCK='        <service\n            android:name=".PowerButtonService"\n            android:enabled="true"\n            android:exported="false"\n            android:foregroundServiceType="specialUse">\n            <property\n                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"\n                android:value="Vigilancia del boton de panico para emergencias personales" \/>\n        <\/service>'
         sed -i "/<\/application>/i\\$SERVICE_BLOCK" "$MANIFEST"
         log "   + <service> PowerButtonService agregado al manifest"
+    fi
+
+    # Registrar <receiver> BootReceiver en AndroidManifest.xml
+    if ! grep -q "BootReceiver" "$MANIFEST"; then
+        BOOT_BLOCK='        <receiver\n            android:name=".BootReceiver"\n            android:enabled="true"\n            android:exported="true">\n            <intent-filter android:priority="1000">\n                <action android:name="android.intent.action.BOOT_COMPLETED" \/>\n                <action android:name="android.intent.action.QUICKBOOT_POWERON" \/>\n                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" \/>\n            <\/intent-filter>\n        <\/receiver>'
+        sed -i "/<\/application>/i\\$BOOT_BLOCK" "$MANIFEST"
+        log "   + <receiver> BootReceiver agregado al manifest"
+    fi
+
+    # Registrar <service> en AndroidManifest.xml para MicListenerService
+    if ! grep -q "MicListenerService" "$MANIFEST"; then
+        MIC_SERVICE_BLOCK='        <service\n            android:name=".MicListenerService"\n            android:enabled="true"\n            android:exported="false"\n            android:foregroundServiceType="microphone">\n        <\/service>'
+        sed -i "/<\/application>/i\\$MIC_SERVICE_BLOCK" "$MANIFEST"
+        log "   + <service> MicListenerService agregado al manifest"
     fi
 
     # Agregar intent-filter para scheme nacurutu:// dentro del MainActivity activity

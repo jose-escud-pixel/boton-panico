@@ -15,8 +15,8 @@ import {
 import {
   Camera, RefreshCw, Plus, Pencil, Trash2, Copy, RotateCcw,
   Wifi, WifiOff, MapPin, Building2, AlertTriangle, Settings, Layers,
-  Network, Server, HardDrive, Shield, Activity, ChevronDown, ChevronUp,
-  Zap, Clock, Eye, EyeOff, BellOff, Bell, Info,
+  Network, Server, HardDrive, Shield, ShieldOff, Activity, ChevronDown, ChevronUp,
+  Zap, Clock, Eye, EyeOff, BellOff, Bell, Info, Search, X, Archive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -218,7 +218,9 @@ const EMPTY_FORM = {
   group_name: "",
   notes: "",
   watchdog_minutes: 0,
+  watchdog_notify: true,
   event_retention_days: 30,
+  areas: {},
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -229,9 +231,14 @@ const fmtAgo = (iso) => {
 };
 
 const isOnline = (device) => {
-  if (!device.last_seen_at) return null; // unknown
+  // Usar last_seen_at como indicador principal.
+  // - Con watchdog configurado: usar ese tiempo como ventana de offline.
+  // - Sin watchdog (0): ventana de 2 horas. Paneles sin keepalive (D2APS, Contact ID)
+  //   solo mandan señal en eventos reales; 10 min era demasiado agresivo.
+  if (!device.last_seen_at) return null;
   const diff = Date.now() - new Date(device.last_seen_at).getTime();
-  return diff < 30 * 60 * 1000; // 30 minutos
+  const windowMin = device.watchdog_minutes > 0 ? device.watchdog_minutes : 120;
+  return diff < windowMin * 60 * 1000;
 };
 
 function webhookUrl(token) {
@@ -285,6 +292,10 @@ export default function Devices() {
   const [rulesForm, setRulesForm]     = useState({});
   const [savingRules, setSavingRules] = useState(false);
 
+  // Áreas: inputs para agregar nueva entrada en el form
+  const [newAreaId, setNewAreaId]     = useState("");
+  const [newAreaName, setNewAreaName] = useState("");
+
   // Tab Eventos: sub-vista y datos
   const [eventsSubView, setEventsSubView]     = useState("live");   // "live" | "history" | "archived" | "state"
   const [historyEvents, setHistoryEvents]     = useState([]);
@@ -301,6 +312,22 @@ export default function Devices() {
   // Feed en vivo
   const [liveEvents, setLiveEvents]   = useState([]);
   const liveRef = useRef(null);
+  // Ref para acceder al historyDevice actual desde dentro de closures de socket
+  const historyDeviceRef = useRef("all");
+  useEffect(() => { historyDeviceRef.current = historyDevice; }, [historyDevice]);
+
+  // Buscadores en vivo e historial
+  const [liveSearch, setLiveSearch]       = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  // Carga inicial del feed (para que no quede vacío si no llegan eventos por socket en esta sesión)
+  const liveInitialLoadedRef = useRef(false);
+
+  // Tick cada 30s → fuerza re-render para recalcular "hace X minutos" y badges online/offline
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
   const load = useCallback(async ({ silent = false } = {}) => {
@@ -330,24 +357,66 @@ export default function Devices() {
 
   useEffect(() => { load(); loadOrgs(); loadSysConfig(); }, [load, loadOrgs, loadSysConfig]);
 
+  // Re-fetch silencioso de dispositivos al volver al tab (actualiza last_seen_at y tiempos)
+  const prevTabRef = useRef(null);
+  useEffect(() => {
+    if (activeTab === "devices" && prevTabRef.current !== null && prevTabRef.current !== "devices") {
+      load({ silent: true });
+    }
+    prevTabRef.current = activeTab;
+  }, [activeTab, load]);
+
   // Socket.IO: feed en vivo + refresh silencioso
   useEffect(() => {
     if (!socket) return;
     const onAlertNew = () => load({ silent: true });
     const onDeviceEvent = (evt) => {
       setLiveEvents(prev => [evt, ...prev].slice(0, 200));
-      // Actualizar last_seen_at en memoria sin refetch completo
       setDevices(prev => prev.map(d =>
         d.id === evt.device_id
           ? { ...d, last_seen_at: evt.timestamp, last_event_at: evt.timestamp, last_event_type: evt.event_code }
           : d
       ));
+      // Insertar en historial en tiempo real si el dispositivo seleccionado coincide
+      if (evt.device_id === historyDeviceRef.current) {
+        const histEvt = { ...evt, id: `live-${evt.timestamp}-${evt.event_code}` };
+        setHistoryEvents(prev => [histEvt, ...prev]);
+        setHistoryTotal(prev => prev + 1);
+      }
+    };
+    const onArmState = (evt) => {
+      setDevices(prev => prev.map(d =>
+        d.id === evt.device_id
+          ? { ...d, arm_state: evt.arm_state, arm_state_at: evt.timestamp }
+          : d
+      ));
+    };
+    const onTcpStatus = (evt) => {
+      setDevices(prev => prev.map(d =>
+        d.id === evt.device_id
+          ? { ...d, tcp_connected: evt.tcp_connected }
+          : d
+      ));
+    };
+    // Actualiza last_seen_at en tiempo real para que el badge online/offline reaccione
+    const onLastSeen = (evt) => {
+      setDevices(prev => prev.map(d =>
+        d.id === evt.device_id
+          ? { ...d, last_seen_at: evt.last_seen_at }
+          : d
+      ));
     };
     socket.on("alert:new", onAlertNew);
     socket.on("device:event_received", onDeviceEvent);
+    socket.on("device:arm_state_changed", onArmState);
+    socket.on("device:tcp_status", onTcpStatus);
+    socket.on("device:last_seen", onLastSeen);
     return () => {
       socket.off("alert:new", onAlertNew);
       socket.off("device:event_received", onDeviceEvent);
+      socket.off("device:arm_state_changed", onArmState);
+      socket.off("device:tcp_status", onTcpStatus);
+      socket.off("device:last_seen", onLastSeen);
     };
   }, [socket, load]);
 
@@ -373,7 +442,9 @@ export default function Devices() {
       group_name: device.group_name || "",
       notes: device.notes || "",
       watchdog_minutes: device.watchdog_minutes ?? 0,
+      watchdog_notify: device.watchdog_notify ?? true,
       event_retention_days: device.event_retention_days ?? 30,
+      areas: device.areas || {},
     });
     setFormOpen(true);
   };
@@ -411,7 +482,9 @@ export default function Devices() {
           ? { lat: parseFloat(form.location.lat), lng: parseFloat(form.location.lng) }
           : null,
         watchdog_minutes: Number(form.watchdog_minutes ?? 0),
+        watchdog_notify: form.watchdog_notify ?? true,
         event_retention_days: Number(form.event_retention_days ?? 30),
+        areas: form.areas || {},
       };
       if (editing) {
         await api.patch(`/devices/${editing.id}`, payload);
@@ -555,6 +628,37 @@ export default function Devices() {
     finally { setStateLoading(false); }
   };
 
+  // Carga los últimos eventos de todos los paneles al abrir el tab por primera vez
+  const loadInitialLiveEvents = useCallback(async (devList) => {
+    const alarmDevices = (devList || devices).filter(d =>
+      d.alarm_protocol === "adm_cid" || d.alarm_protocol === "sia_dcs"
+    );
+    if (alarmDevices.length === 0) return;
+    try {
+      const results = await Promise.allSettled(
+        alarmDevices.map(d => api.get(`/devices/${d.id}/events?page=1&limit=30`))
+      );
+      const evts = results
+        .filter(r => r.status === "fulfilled")
+        .flatMap(r => r.value.data.events || []);
+      evts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setLiveEvents(prev => {
+        const prevIds = new Set(prev.map(e => e.id));
+        const newEvts = evts.filter(e => !prevIds.has(e.id));
+        return [...prev, ...newEvts]
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+          .slice(0, 200);
+      });
+    } catch {}
+  }, [devices]);
+
+  useEffect(() => {
+    if (activeTab === "events" && !liveInitialLoadedRef.current && devices.length > 0) {
+      liveInitialLoadedRef.current = true;
+      loadInitialLiveEvents();
+    }
+  }, [activeTab, devices.length, loadInitialLiveEvents]);
+
   const host = serverHost();
   const admCidPort = sysConfig?.adm_cid_port ?? 5000;
 
@@ -578,6 +682,24 @@ export default function Devices() {
       <span className="inline-flex items-center gap-1 text-[10px] text-rose-500 dark:text-rose-400 font-medium">
         <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
         Desconectado
+      </span>
+    );
+  };
+
+  const ArmBadge = ({ device }) => {
+    if (!device.arm_state) return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500">
+        — sin dato
+      </span>
+    );
+    if (device.arm_state === "armed") return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded-full">
+        <Shield className="w-2.5 h-2.5" strokeWidth={2} /> Armado
+      </span>
+    );
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 font-semibold bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-full">
+        <ShieldOff className="w-2.5 h-2.5" strokeWidth={2} /> Desarmado
       </span>
     );
   };
@@ -784,9 +906,10 @@ export default function Devices() {
                       </Badge>
                     </div>
 
-                    {/* Online badge */}
-                    <div className="hidden md:block shrink-0 w-24 text-center">
+                    {/* Online + Arm badge */}
+                    <div className="hidden md:flex flex-col items-center gap-0.5 shrink-0 w-28">
                       <OnlineBadge device={device} />
+                      {isAdmCid && <ArmBadge device={device} />}
                     </div>
 
                     {/* Último evento */}
@@ -914,6 +1037,28 @@ export default function Devices() {
                             <Clock className="w-3 h-3 shrink-0" />
                             <span>Última señal: {device.last_seen_at ? fmtAgo(device.last_seen_at) : "Nunca"}</span>
                           </div>
+                          {/* Estado armado/desarmado — solo paneles ADM-CID / SIA-DCS */}
+                          {isAdmCid && (
+                            <div className="flex items-center gap-1.5">
+                              {device.arm_state === "armed"
+                                ? <Shield className="w-3 h-3 shrink-0 text-emerald-500" />
+                                : <ShieldOff className="w-3 h-3 shrink-0 text-amber-500" />
+                              }
+                              <span>
+                                Estado:{" "}
+                                <strong className={
+                                  device.arm_state === "armed" ? "text-emerald-600 dark:text-emerald-400" :
+                                  device.arm_state === "disarmed" ? "text-amber-600 dark:text-amber-400" :
+                                  "text-slate-400"
+                                }>
+                                  {device.arm_state === "armed" ? "Armado"
+                                    : device.arm_state === "disarmed" ? "Desarmado"
+                                    : "Desconocido"}
+                                </strong>
+                                {device.arm_state && device.arm_state_at && ` · ${fmtAgo(device.arm_state_at)}`}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-1.5">
                             <Zap className="w-3 h-3 shrink-0" />
                             <span>Último evento: {device.last_event_at ? fmtAgo(device.last_event_at) : "Nunca"}
@@ -1022,9 +1167,18 @@ export default function Devices() {
       {/* ── TAB: EVENTOS ──────────────────────────────────────────────────── */}
       {activeTab === "events" && (() => {
         const admCidDevices = devices.filter(d => d.alarm_protocol === "adm_cid" || d.alarm_protocol === "sia_dcs");
-        const EventRow = ({ evt }) => (
-          <div className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        const EventRow = ({ evt, onArchive }) => {
+          const isCL = evt.event_code === "CL";
+          const isOP = evt.event_code === "OP";
+          return (
+          <div className={`flex items-start gap-3 px-4 py-3 border-l-2 group ${
+            isCL ? "bg-red-50 dark:bg-red-950/25 border-red-400" :
+            isOP ? "bg-green-50 dark:bg-green-950/25 border-green-400" :
+            "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/40"
+          }`}>
             <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+              isCL ? "bg-red-500" :
+              isOP ? "bg-green-500" :
               evt.severity === "alarm"   ? "bg-rose-500" :
               evt.severity === "warning" ? "bg-amber-500" :
               evt.severity === "info"    ? "bg-blue-500" :
@@ -1032,23 +1186,38 @@ export default function Devices() {
             }`} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{evt.device_name}</span>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide shrink-0">{evt.device_name}</span>
                 <Badge className={`text-[9px] border ${SEVERITY_BADGE[evt.severity] || SEVERITY_BADGE.ignore}`}>
                   {SEVERITY_OPTIONS.find(s => s.value === evt.severity)?.label || evt.severity}
                 </Badge>
                 {evt.event_code && <code className="text-[10px] font-mono text-slate-400 dark:text-slate-500">{evt.event_code}</code>}
                 {evt.is_restore && <span className="text-[9px] text-emerald-600 dark:text-emerald-400">↩ Restore</span>}
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">{evt.event_label}</p>
+              <p className="text-sm font-medium text-slate-900 dark:text-white mt-0.5">{evt.event_label}</p>
               {evt.zone && evt.zone !== "000" && (
                 <p className="text-[10px] text-slate-400 dark:text-slate-500">Zona {parseInt(evt.zone, 10) || evt.zone}</p>
               )}
             </div>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0 font-mono whitespace-nowrap">
-              {evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString("es-PY") : ""}
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              {onArchive && (
+                <button
+                  onClick={() => onArchive(evt)}
+                  title="Archivar evento"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono whitespace-nowrap text-right">
+                {evt.timestamp ? new Date(evt.timestamp).toLocaleString("es-PY", {
+                  day: "2-digit", month: "2-digit",
+                  hour: "2-digit", minute: "2-digit",
+                }) : ""}
+              </span>
+            </div>
           </div>
         );
+        };
 
         return (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -1085,19 +1254,76 @@ export default function Devices() {
             </div>
 
             {/* ─ En vivo ─ */}
-            {eventsSubView === "live" && (
-              liveEvents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-500">
-                  <Activity className="w-10 h-10 mb-3 opacity-20" />
-                  <p className="text-sm">Sin eventos recibidos aún en esta sesión</p>
-                  <p className="text-xs mt-1 text-slate-300 dark:text-slate-600">Aparecerán aquí en tiempo real cuando el panel envíe señales</p>
+            {eventsSubView === "live" && (() => {
+              const filteredLive = liveSearch
+                ? liveEvents.filter(e =>
+                    [e.device_name, e.event_label, e.event_code].some(v =>
+                      v?.toLowerCase().includes(liveSearch.toLowerCase())
+                    )
+                  )
+                : liveEvents;
+
+              const handleArchiveLive = async (evt) => {
+                if (!evt.id || evt.id.startsWith("live-")) {
+                  setLiveEvents(prev => prev.filter(e => e !== evt));
+                  return;
+                }
+                try {
+                  await api.patch(`/devices/${evt.device_id}/events/${evt.id}/archive`);
+                  setLiveEvents(prev => prev.filter(e => e.id !== evt.id));
+                } catch {
+                  setLiveEvents(prev => prev.filter(e => e !== evt));
+                }
+              };
+
+              return (
+                <div>
+                  {/* Buscador */}
+                  <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/20">
+                    <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por dispositivo, evento, código..."
+                      value={liveSearch}
+                      onChange={e => setLiveSearch(e.target.value)}
+                      className="flex-1 text-xs bg-transparent outline-none text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
+                    />
+                    {liveSearch && (
+                      <button onClick={() => setLiveSearch("")} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                    {liveEvents.length > 0 && (
+                      <span className="text-[10px] text-slate-400 shrink-0">{liveEvents.length} eventos</span>
+                    )}
+                  </div>
+
+                  {filteredLive.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-500">
+                      <Activity className="w-10 h-10 mb-3 opacity-20" />
+                      <p className="text-sm">{liveSearch ? "Sin resultados" : "Sin eventos aún"}</p>
+                      <p className="text-xs mt-1 text-slate-300 dark:text-slate-600">
+                        {liveSearch ? "Probá con otra búsqueda" : "Aparecerán aquí cuando el panel envíe señales"}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Headers */}
+                      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/30">
+                        <span className="w-2 shrink-0" />
+                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide flex-1">Dispositivo / Evento</span>
+                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide shrink-0">Fecha y hora</span>
+                      </div>
+                      <div ref={liveRef} className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[60vh] overflow-y-auto">
+                        {filteredLive.map((evt, i) => (
+                          <EventRow key={evt.id || i} evt={evt} onArchive={handleArchiveLive} />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
-              ) : (
-                <div ref={liveRef} className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[60vh] overflow-y-auto">
-                  {liveEvents.map((evt, i) => <EventRow key={i} evt={evt} />)}
-                </div>
-              )
-            )}
+              );
+            })()}
 
             {/* ─ Historial / Archivados ─ */}
             {(eventsSubView === "history" || eventsSubView === "archived") && (
@@ -1153,6 +1379,25 @@ export default function Devices() {
                   )}
                 </div>
 
+                {/* Buscador historial */}
+                {historyDevice !== "all" && (
+                  <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/20">
+                    <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      placeholder="Buscar en esta página..."
+                      value={historySearch}
+                      onChange={e => setHistorySearch(e.target.value)}
+                      className="flex-1 text-xs bg-transparent outline-none text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
+                    />
+                    {historySearch && (
+                      <button onClick={() => setHistorySearch("")} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {historyDevice === "all" ? (
                   <div className="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-500">
                     <p className="text-sm">Seleccioná un panel para ver su historial</p>
@@ -1167,8 +1412,21 @@ export default function Devices() {
                   </div>
                 ) : (
                   <>
+                    {/* Headers historial */}
+                    <div className="flex items-center gap-3 px-4 py-1.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/30">
+                      <span className="w-2 shrink-0" />
+                      <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide flex-1">Dispositivo / Evento</span>
+                      <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide shrink-0">Fecha y hora</span>
+                    </div>
                     <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[55vh] overflow-y-auto">
-                      {historyEvents.map((evt) => <EventRow key={evt.id} evt={evt} />)}
+                      {(historySearch
+                        ? historyEvents.filter(e =>
+                            [e.device_name, e.event_label, e.event_code].some(v =>
+                              v?.toLowerCase().includes(historySearch.toLowerCase())
+                            )
+                          )
+                        : historyEvents
+                      ).map((evt) => <EventRow key={evt.id} evt={evt} />)}
                     </div>
                     {/* Paginación */}
                     {historyTotal > 50 && (
@@ -1471,7 +1729,7 @@ export default function Devices() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="dark:text-slate-300">Watchdog — alertar sin señal en</Label>
+                    <Label className="dark:text-slate-300">Watchdog — sin señal en</Label>
                     <Select
                       value={String(form.watchdog_minutes ?? 0)}
                       onValueChange={v => setForm(p => ({ ...p, watchdog_minutes: Number(v) }))}
@@ -1487,6 +1745,18 @@ export default function Devices() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {/* Toggle: solo marcar offline vs crear alerta */}
+                    {(form.watchdog_minutes ?? 0) > 0 && (
+                      <label className="flex items-center gap-2 cursor-pointer mt-1">
+                        <input
+                          type="checkbox"
+                          checked={form.watchdog_notify ?? true}
+                          onChange={e => setForm(p => ({ ...p, watchdog_notify: e.target.checked }))}
+                          className="accent-rose-600 w-3.5 h-3.5"
+                        />
+                        <span className="text-xs text-slate-500 dark:text-slate-400">Crear alerta cuando sin señal</span>
+                      </label>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="dark:text-slate-300">Retención de historial</Label>
@@ -1600,6 +1870,81 @@ export default function Devices() {
                 className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
               />
             </div>
+
+            {/* Nombres de áreas (solo para paneles de alarma) */}
+            {(form.alarm_protocol === "adm_cid" || form.alarm_protocol === "sia_dcs") && (
+              <div className="space-y-2">
+                <div>
+                  <Label className="dark:text-slate-300">Nombres de áreas / particiones</Label>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                    Asigná nombres a cada área del panel. Ej: "501" → "Oficina", "502" → "Depósito".
+                    Si no configurás un área, se muestra el nombre que envía el panel.
+                  </p>
+                </div>
+                {/* Lista de áreas configuradas */}
+                {Object.entries(form.areas || {}).length > 0 && (
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    {Object.entries(form.areas || {}).map(([id, name], i, arr) => (
+                      <div
+                        key={id}
+                        className={`flex items-center gap-2 px-3 py-2 ${i < arr.length - 1 ? "border-b border-slate-100 dark:border-slate-800" : ""}`}
+                      >
+                        <code className="text-[11px] font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300 w-16 text-center shrink-0">{id}</code>
+                        <span className="text-xs text-slate-400 dark:text-slate-500">→</span>
+                        <span className="text-sm text-slate-800 dark:text-slate-200 flex-1">{name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setForm(p => {
+                            const next = { ...(p.areas || {}) };
+                            delete next[id];
+                            return { ...p, areas: next };
+                          })}
+                          className="text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Agregar nueva área */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={newAreaId}
+                    onChange={e => setNewAreaId(e.target.value.replace(/\D/g, ""))}
+                    placeholder="ID (ej: 501)"
+                    className="w-24 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                  />
+                  <span className="text-slate-400 dark:text-slate-500 text-sm shrink-0">→</span>
+                  <Input
+                    value={newAreaName}
+                    onChange={e => setNewAreaName(e.target.value)}
+                    placeholder="Nombre (ej: Oficina principal)"
+                    className="flex-1 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && newAreaId && newAreaName.trim()) {
+                        e.preventDefault();
+                        setForm(p => ({ ...p, areas: { ...(p.areas || {}), [newAreaId]: newAreaName.trim() } }));
+                        setNewAreaId(""); setNewAreaName("");
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!newAreaId || !newAreaName.trim()}
+                    onClick={() => {
+                      setForm(p => ({ ...p, areas: { ...(p.areas || {}), [newAreaId]: newAreaName.trim() } }));
+                      setNewAreaId(""); setNewAreaName("");
+                    }}
+                    className="text-xs h-9 shrink-0 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Agregar
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Botones */}
             <div className="flex gap-3 pt-2">
