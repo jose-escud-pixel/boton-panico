@@ -17,10 +17,17 @@ import {
   Wifi, WifiOff, MapPin, Building2, AlertTriangle, Settings, Layers,
   Network, Server, HardDrive, Shield, ShieldOff, Activity, ChevronDown, ChevronUp,
   Zap, Clock, Eye, EyeOff, BellOff, Bell, Info, Search, X, Archive,
+  Tags, Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
+import {
+  EVENT_CATEGORIES_CID, EVENT_CATEGORIES_SIA, EVENT_CATEGORIES, SEVERITY_OPTIONS, SEVERITY_BADGE,
+} from "../../lib/eventCategories";
+import BrandProfilesPanel from "../../components/devices/BrandProfilesPanel";
+import LiveLogPanel from "../../components/devices/LiveLogPanel";
+import EventRulesEditor from "../../components/devices/EventRulesEditor";
 
 // ── Constantes ──────────────────────────────────────────────────────────────
 const DEVICE_TYPES = [
@@ -75,135 +82,21 @@ const RETENTION_OPTIONS = [
   { value: 90, label: "90 días" },
 ];
 
-const ALARM_BRANDS = [
-  { value: "hikvision_axpro", label: "Hikvision AX Pro" },
-  { value: "ajax",            label: "Ajax Systems" },
-  { value: "dsc",             label: "DSC (Johnson Controls)" },
-  { value: "paradox",         label: "Paradox Security" },
-  { value: "bosch",           label: "Bosch Security" },
-  { value: "texecom",         label: "Texecom" },
-  { value: "honeywell",       label: "Honeywell / Resideo" },
-  { value: "napco",           label: "Napco Security" },
-  { value: "generic",         label: "Genérico / Otro" },
-];
+// Fallback de labels para marcas "de sistema" (por si /alarm-brands todavía no
+// cargó, o para dispositivos viejos con una key que ya no está en la lista).
+const FALLBACK_BRAND_LABELS = {
+  hikvision_axpro: "Hikvision AX Pro",
+  ajax: "Ajax Systems",
+  dsc: "DSC (Johnson Controls)",
+  paradox: "Paradox Security",
+  bosch: "Bosch Security",
+  texecom: "Texecom",
+  honeywell: "Honeywell / Resideo",
+  napco: "Napco Security",
+  generic: "Genérico / Otro",
+};
 
 const DEFAULT_EVENTS = ["VMD", "linedetection", "fielddetection", "IO"];
-
-// Categorías Contact ID (numérico) para reglas de eventos
-const EVENT_CATEGORIES_CID = [
-  {
-    prefix: "1",
-    label: "Alarmas (E1xx)",
-    description: "Incendio, intrusión, pánico, médico, robo",
-    defaultSeverity: "alarm",
-  },
-  {
-    prefix: "2",
-    label: "Bypass / Supervisión (E2xx)",
-    description: "Zonas desactivadas, supervisión de señal",
-    defaultSeverity: "warning",
-  },
-  {
-    prefix: "3",
-    label: "Problemas / Trouble (E3xx)",
-    description: "Batería baja, fallo AC, tamper, desconexión TCP/IP (E381)",
-    defaultSeverity: "info",
-  },
-  {
-    prefix: "4",
-    label: "Apertura / Cierre (E4xx)",
-    description: "Armado, desarmado, acceso de usuarios",
-    defaultSeverity: "ignore",
-  },
-  {
-    prefix: "6",
-    label: "Test / Mantenimiento (E6xx)",
-    description: "Prueba periódica, reset de sistema",
-    defaultSeverity: "ignore",
-  },
-];
-
-// Categorías SIA DC-09 (alfabético) — Hikvision AX Pro, Ajax, DSC...
-// La primera letra del código SIA determina el default; prefijos configurables
-const EVENT_CATEGORIES_SIA = [
-  {
-    prefix: "B",
-    label: "Intrusión SIA (BA, BV, BD...)",
-    description: "Zona disparada (BA=intrusión, BV=verificación, BD=apertura zona)",
-    defaultSeverity: "alarm",
-  },
-  {
-    prefix: "F",
-    label: "Incendio SIA (FA, FT, FH...)",
-    description: "Alarma de fuego y detectores de humo",
-    defaultSeverity: "alarm",
-  },
-  {
-    prefix: "M",
-    label: "Médico SIA (MA, ME)",
-    description: "Alarma médica y emergencia",
-    defaultSeverity: "alarm",
-  },
-  {
-    prefix: "P",
-    label: "Pánico SIA (PA, PH, PB...)",
-    description: "Botón de pánico, hold-up",
-    defaultSeverity: "alarm",
-  },
-  {
-    prefix: "A",
-    label: "Energía SIA (AT, AR)",
-    description: "AT=corte de energía, AR=restauración eléctrica",
-    defaultSeverity: "info",
-  },
-  {
-    prefix: "T",
-    label: "Tamper SIA (TA, TR)",
-    description: "TA=manipulación física del panel, TR=restaurado",
-    defaultSeverity: "info",
-  },
-  {
-    prefix: "Y",
-    label: "Comunicación SIA (YX, YS, YR)",
-    description: "YX=fallo de ruta, YS=pérdida señal, YR=restauración",
-    defaultSeverity: "info",
-  },
-  {
-    prefix: "C",
-    label: "Armado SIA (CL, CS)",
-    description: "CL=panel armado, CS=inicio de programación",
-    defaultSeverity: "ignore",
-  },
-  {
-    prefix: "O",
-    label: "Desarmado SIA (OP, OS)",
-    description: "OP=panel desarmado, OS=acceso de servicio técnico",
-    defaultSeverity: "ignore",
-  },
-  {
-    prefix: "R",
-    label: "Test / Restore SIA (RP, RA...)",
-    description: "RP=test periódico automático y restauraciones generales",
-    defaultSeverity: "ignore",
-  },
-];
-
-// Combinadas para uso interno (compatible con reglas guardadas por prefijo)
-const EVENT_CATEGORIES = [...EVENT_CATEGORIES_CID, ...EVENT_CATEGORIES_SIA];
-
-const SEVERITY_OPTIONS = [
-  { value: "alarm",   label: "Alarma",       desc: "Crea alerta + push", color: "text-rose-600 dark:text-rose-400" },
-  { value: "warning", label: "Advertencia",  desc: "Crea alerta sin push", color: "text-amber-600 dark:text-amber-400" },
-  { value: "info",    label: "Informativo",  desc: "Feed en vivo, sin alerta", color: "text-blue-600 dark:text-blue-400" },
-  { value: "ignore",  label: "Ignorar",      desc: "Descarta silenciosamente", color: "text-slate-500 dark:text-slate-400" },
-];
-
-const SEVERITY_BADGE = {
-  alarm:   "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800",
-  warning: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
-  info:    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
-  ignore:  "bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700",
-};
 
 const EMPTY_FORM = {
   name: "",
@@ -221,6 +114,7 @@ const EMPTY_FORM = {
   watchdog_notify: true,
   event_retention_days: 30,
   areas: {},
+  event_rules: null, // null = no tocar; se llena solo si se usa "Cargar reglas de la marca"
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -281,15 +175,20 @@ export default function Devices() {
   const [formOpen, setFormOpen]       = useState(false);
   const [editing, setEditing]         = useState(null);
   const [form, setForm]               = useState(EMPTY_FORM);
+  const [dialogTab, setDialogTab]     = useState("general"); // pestañas dentro del form de dispositivo
   const [saving, setSaving]           = useState(false);
   const [deleting, setDeleting]       = useState(null);
   const [togglingStatus, setToggling] = useState(null);
   const [filterGroup, setFilterGroup] = useState("all");
   const [expandedId, setExpandedId]   = useState(null);
 
-  // Reglas de eventos
+  // Marcas de panel (plantillas de reglas reutilizables)
+  const [alarmBrands, setAlarmBrands] = useState([]);
+
+  // Reglas de eventos (por dispositivo — override individual)
   const [rulesDevice, setRulesDevice] = useState(null);
-  const [rulesForm, setRulesForm]     = useState({});
+  const [rulesList, setRulesList]     = useState([]);   // array de EventRule
+  const [rulesBrandPick, setRulesBrandPick] = useState("");
   const [savingRules, setSavingRules] = useState(false);
 
   // Áreas: inputs para agregar nueva entrada en el form
@@ -355,7 +254,18 @@ export default function Devices() {
     }
   }, []);
 
-  useEffect(() => { load(); loadOrgs(); loadSysConfig(); }, [load, loadOrgs, loadSysConfig]);
+  const loadAlarmBrands = useCallback(async () => {
+    try { const { data } = await api.get("/alarm-brands"); setAlarmBrands(data); } catch {}
+  }, []);
+
+  useEffect(() => {
+    load(); loadOrgs(); loadSysConfig(); loadAlarmBrands();
+  }, [load, loadOrgs, loadSysConfig, loadAlarmBrands]);
+
+  const brandLabel = (key) => {
+    const found = alarmBrands.find((b) => b.key === key);
+    return found?.name || FALLBACK_BRAND_LABELS[key] || key || "Genérico";
+  };
 
   // Re-fetch silencioso de dispositivos al volver al tab (actualiza last_seen_at y tiempos)
   const prevTabRef = useRef(null);
@@ -424,6 +334,7 @@ export default function Devices() {
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY_FORM, event_types: [...DEFAULT_EVENTS] });
+    setDialogTab("general");
     setFormOpen(true);
   };
 
@@ -445,11 +356,22 @@ export default function Devices() {
       watchdog_notify: device.watchdog_notify ?? true,
       event_retention_days: device.event_retention_days ?? 30,
       areas: device.areas || {},
+      event_rules: null,
     });
+    setDialogTab("general");
     setFormOpen(true);
   };
 
   const closeForm = () => { setFormOpen(false); setEditing(null); setForm(EMPTY_FORM); };
+
+  // Copia la plantilla de reglas de la marca seleccionada al form del dispositivo.
+  // Se guarda junto con el resto de los campos al confirmar (crear o editar).
+  const loadBrandRulesIntoForm = () => {
+    const brand = alarmBrands.find((b) => b.key === form.alarm_brand);
+    if (!brand) { toast.error("Elegí una marca con reglas configuradas primero"); return; }
+    setForm((p) => ({ ...p, event_rules: JSON.parse(JSON.stringify(brand.event_rules || [])) }));
+    toast.success(`${(brand.event_rules || []).length} reglas de "${brand.name}" cargadas — se guardan al confirmar`);
+  };
 
   const toggleEvent = (value) => {
     setForm(prev => ({
@@ -485,6 +407,7 @@ export default function Devices() {
         watchdog_notify: form.watchdog_notify ?? true,
         event_retention_days: Number(form.event_retention_days ?? 30),
         areas: form.areas || {},
+        ...(form.event_rules ? { event_rules: form.event_rules } : {}),
       };
       if (editing) {
         await api.patch(`/devices/${editing.id}`, payload);
@@ -554,19 +477,25 @@ export default function Devices() {
     }
   };
 
-  // ── Reglas de eventos ────────────────────────────────────────────────────
+  // ── Reglas de eventos (por dispositivo) ─────────────────────────────────
   const openRules = (device) => {
     setRulesDevice(device);
-    setRulesForm(deviceRulesMap(device));
+    setRulesList(device.event_rules || []);
+    setRulesBrandPick(device.alarm_brand || "");
+  };
+
+  const loadBrandRulesIntoRulesDialog = () => {
+    const brand = alarmBrands.find((b) => b.key === rulesBrandPick);
+    if (!brand) { toast.error("Elegí una marca primero"); return; }
+    setRulesList(JSON.parse(JSON.stringify(brand.event_rules || [])));
+    toast.success(`${(brand.event_rules || []).length} reglas de "${brand.name}" cargadas — recordá guardar`);
   };
 
   const saveRules = async () => {
     setSavingRules(true);
     try {
-      const event_rules = Object.entries(rulesForm).map(([prefix, severity]) => ({
-        event_code_prefix: prefix,
-        severity,
-      }));
+      // Limpiar filas con código vacío (las agregadas con "+ Agregar código" sin completar)
+      const event_rules = rulesList.filter((r) => (r.event_code_prefix || "").trim());
       await api.patch(`/devices/${rulesDevice.id}`, { event_rules });
       setDevices(prev => prev.map(d =>
         d.id === rulesDevice.id ? { ...d, event_rules } : d
@@ -753,6 +682,8 @@ export default function Devices() {
         {[
           { id: "devices", Icon: Layers,   label: "Dispositivos" },
           { id: "events",  Icon: Activity, label: "Eventos", badge: liveEvents.length > 0 ? liveEvents.length : null },
+          { id: "brands",  Icon: Tags,     label: "Marcas" },
+          { id: "logs",    Icon: Terminal, label: "Logs" },
           { id: "config",  Icon: Settings, label: "Configuración" },
         ].map(({ id, Icon, label, badge }) => (
           <button
@@ -1000,7 +931,7 @@ export default function Devices() {
                             </p>
                             {device.alarm_brand && device.alarm_brand !== "generic" && (
                               <p className="text-[10px] text-violet-400 dark:text-violet-500">
-                                {ALARM_BRANDS.find(b => b.value === device.alarm_brand)?.label}
+                                {brandLabel(device.alarm_brand)}
                               </p>
                             )}
                           </div>
@@ -1564,6 +1495,16 @@ export default function Devices() {
         );
       })()}
 
+      {/* ── TAB: MARCAS ──────────────────────────────────────────────────── */}
+      {activeTab === "brands" && (
+        <BrandProfilesPanel onBrandsChanged={setAlarmBrands} />
+      )}
+
+      {/* ── TAB: LOGS EN VIVO ─────────────────────────────────────────────── */}
+      {activeTab === "logs" && (
+        <LiveLogPanel />
+      )}
+
       {/* ── TAB: CONFIGURACIÓN ───────────────────────────────────────────── */}
       {activeTab === "config" && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
@@ -1636,318 +1577,379 @@ export default function Devices() {
         </div>
       )}
 
-      {/* ── FORM DIALOG ──────────────────────────────────────────────────── */}
+      {/* ── FORM DIALOG (por secciones) ──────────────────────────────────── */}
       <Dialog open={formOpen} onOpenChange={open => { if (!open) closeForm(); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto dark:bg-slate-900 dark:border-slate-800">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-900 dark:border-slate-800">
           <DialogHeader>
             <DialogTitle className="dark:text-white">
-              {editing ? "Editar dispositivo" : "Nuevo dispositivo"}
+              {editing ? `Editar dispositivo — ${editing.name}` : "Nuevo dispositivo"}
             </DialogTitle>
           </DialogHeader>
 
+          {/* Sub-pestañas del formulario */}
+          <div className="flex gap-1 bg-slate-100 dark:bg-slate-800/50 rounded-lg p-1 w-fit flex-wrap">
+            {[
+              { id: "general",  label: "General" },
+              { id: "brand",    label: "Marca y protocolo" },
+              { id: "location", label: "Ubicación y áreas" },
+              { id: "advanced", label: "Avanzado" },
+            ].map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setDialogTab(t.id)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  dialogTab === t.id
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
           <div className="space-y-4 pt-2">
-            {/* Nombre */}
-            <div className="space-y-1.5">
-              <Label className="dark:text-slate-300">Nombre *</Label>
-              <Input
-                value={form.name}
-                onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                placeholder="ej: Panel Piso 2 · NVR Entrada"
-                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-              />
-            </div>
-
-            {/* Tipo + Organización */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="dark:text-slate-300">Tipo *</Label>
-                <Select value={form.device_type} onValueChange={v => setForm(p => ({ ...p, device_type: v }))}>
-                  <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                    {DEVICE_TYPES.map(t => (
-                      <SelectItem key={t.value} value={t.value} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="dark:text-slate-300">Organización *</Label>
-                <Select value={form.organization_id} onValueChange={v => setForm(p => ({ ...p, organization_id: v }))}>
-                  <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                    <SelectValue placeholder="Seleccionar…" />
-                  </SelectTrigger>
-                  <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                    {orgs.map(o => (
-                      <SelectItem key={o.id} value={o.id} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                        {o.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Protocolo */}
-            <div className="space-y-1.5">
-              <Label className="dark:text-slate-300">Protocolo de alarma</Label>
-              <Select value={form.alarm_protocol} onValueChange={v => setForm(p => ({ ...p, alarm_protocol: v }))}>
-                <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                  {ALARM_PROTOCOLS.map(p => (
-                    <SelectItem key={p.value} value={p.value} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Marca + Watchdog + Retención (solo ADM-CID / SIA-DCS) */}
-            {(form.alarm_protocol === "adm_cid" || form.alarm_protocol === "sia_dcs") && (
+            {/* ── Sub-tab: GENERAL ─────────────────────────────────────────── */}
+            {dialogTab === "general" && (
               <>
                 <div className="space-y-1.5">
-                  <Label className="dark:text-slate-300">Marca del panel</Label>
-                  <Select value={form.alarm_brand} onValueChange={v => setForm(p => ({ ...p, alarm_brand: v }))}>
+                  <Label className="dark:text-slate-300">Nombre *</Label>
+                  <Input
+                    value={form.name}
+                    onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="ej: Panel Piso 2 · NVR Entrada"
+                    className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="dark:text-slate-300">Tipo *</Label>
+                    <Select value={form.device_type} onValueChange={v => setForm(p => ({ ...p, device_type: v }))}>
+                      <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
+                        {DEVICE_TYPES.map(t => (
+                          <SelectItem key={t.value} value={t.value} className="dark:text-slate-200 dark:focus:bg-slate-700">
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="dark:text-slate-300">Organización *</Label>
+                    <Select value={form.organization_id} onValueChange={v => setForm(p => ({ ...p, organization_id: v }))}>
+                      <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                        <SelectValue placeholder="Seleccionar…" />
+                      </SelectTrigger>
+                      <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
+                        {orgs.map(o => (
+                          <SelectItem key={o.id} value={o.id} className="dark:text-slate-200 dark:focus:bg-slate-700">
+                            {o.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {form.device_type !== "panel_alarma" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="dark:text-slate-300">IP (referencia)</Label>
+                      <Input
+                        value={form.ip}
+                        onChange={e => setForm(p => ({ ...p, ip: e.target.value }))}
+                        placeholder="192.168.1.100"
+                        className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="dark:text-slate-300">Canal / Descripción</Label>
+                      <Input
+                        value={form.channel}
+                        onChange={e => setForm(p => ({ ...p, channel: e.target.value }))}
+                        placeholder="Canal 1 - Entrada"
+                        className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label className="dark:text-slate-300">Grupo (opcional)</Label>
+                  <Input
+                    value={form.group_name}
+                    onChange={e => setForm(p => ({ ...p, group_name: e.target.value }))}
+                    placeholder="ej: Edificio A, Sucursal Norte, Piso 3"
+                    className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="dark:text-slate-300">Notas</Label>
+                  <Textarea
+                    value={form.notes}
+                    onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+                    placeholder="Notas internas (no visible para clientes)"
+                    rows={2}
+                    className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ── Sub-tab: MARCA Y PROTOCOLO ───────────────────────────────── */}
+            {dialogTab === "brand" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="dark:text-slate-300">Protocolo de alarma</Label>
+                  <Select value={form.alarm_protocol} onValueChange={v => setForm(p => ({ ...p, alarm_protocol: v }))}>
                     <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                      {ALARM_BRANDS.map(b => (
-                        <SelectItem key={b.value} value={b.value} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                          {b.label}
+                      {ALARM_PROTOCOLS.map(p => (
+                        <SelectItem key={p.value} value={p.value} className="dark:text-slate-200 dark:focus:bg-slate-700">
+                          {p.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                {(form.alarm_protocol === "adm_cid" || form.alarm_protocol === "sia_dcs") && (
                   <div className="space-y-1.5">
-                    <Label className="dark:text-slate-300">Watchdog — sin señal en</Label>
-                    <Select
-                      value={String(form.watchdog_minutes ?? 0)}
-                      onValueChange={v => setForm(p => ({ ...p, watchdog_minutes: Number(v) }))}
-                    >
-                      <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                        {WATCHDOG_OPTIONS.map(o => (
-                          <SelectItem key={o.value} value={String(o.value)} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {/* Toggle: solo marcar offline vs crear alerta */}
-                    {(form.watchdog_minutes ?? 0) > 0 && (
-                      <label className="flex items-center gap-2 cursor-pointer mt-1">
-                        <input
-                          type="checkbox"
-                          checked={form.watchdog_notify ?? true}
-                          onChange={e => setForm(p => ({ ...p, watchdog_notify: e.target.checked }))}
-                          className="accent-rose-600 w-3.5 h-3.5"
-                        />
-                        <span className="text-xs text-slate-500 dark:text-slate-400">Crear alerta cuando sin señal</span>
-                      </label>
-                    )}
+                    <Label className="dark:text-slate-300">Marca del panel</Label>
+                    <div className="flex items-center gap-2">
+                      <Select value={form.alarm_brand} onValueChange={v => setForm(p => ({ ...p, alarm_brand: v, event_rules: null }))}>
+                        <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
+                          {(alarmBrands.length > 0 ? alarmBrands : Object.entries(FALLBACK_BRAND_LABELS).map(([key, name]) => ({ key, name }))).map(b => (
+                            <SelectItem key={b.key} value={b.key} className="dark:text-slate-200 dark:focus:bg-slate-700">
+                              {b.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={loadBrandRulesIntoForm}
+                        className="shrink-0 text-xs h-9 dark:border-slate-700 dark:text-slate-300"
+                        title="Copia las reglas de eventos de esta marca al dispositivo (se guardan al confirmar)"
+                      >
+                        <Tags className="w-3.5 h-3.5 mr-1" /> Cargar reglas
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                      {form.event_rules
+                        ? `${form.event_rules.length} regla(s) de la marca listas para guardarse con este dispositivo.`
+                        : editing
+                          ? "Las reglas actuales del dispositivo se editan desde \"Reglas de eventos\" en su fila."
+                          : "Si no cargás reglas acá, el dispositivo usa las reglas por defecto del sistema."}
+                      {" "}Administrá las marcas desde la pestaña "Marcas".
+                    </p>
                   </div>
+                )}
+
+                {form.alarm_protocol === "http_webhook" && (
                   <div className="space-y-1.5">
-                    <Label className="dark:text-slate-300">Retención de historial</Label>
-                    <Select
-                      value={String(form.event_retention_days ?? 30)}
-                      onValueChange={v => setForm(p => ({ ...p, event_retention_days: Number(v) }))}
-                    >
-                      <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                        {RETENTION_OPTIONS.map(o => (
-                          <SelectItem key={o.value} value={String(o.value)} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="dark:text-slate-300">Tipos de evento (Webhook)</Label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {EVENT_TYPES.map(et => (
+                        <label key={et.value} className="flex items-center gap-2 cursor-pointer p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={form.event_types.includes(et.value)}
+                            onChange={() => toggleEvent(et.value)}
+                            className="rounded"
+                          />
+                          <span className="text-xs text-slate-700 dark:text-slate-300">{et.label}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
 
-            {/* IP + Canal (no para panel_alarma) */}
-            {form.device_type !== "panel_alarma" && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="dark:text-slate-300">IP (referencia)</Label>
-                  <Input
-                    value={form.ip}
-                    onChange={e => setForm(p => ({ ...p, ip: e.target.value }))}
-                    placeholder="192.168.1.100"
-                    className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-                  />
+            {/* ── Sub-tab: UBICACIÓN Y ÁREAS ───────────────────────────────── */}
+            {dialogTab === "location" && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="dark:text-slate-300">Latitud</Label>
+                    <Input
+                      type="number" step="any"
+                      value={form.location.lat}
+                      onChange={e => setForm(p => ({ ...p, location: { ...p.location, lat: e.target.value } }))}
+                      placeholder="-25.2867"
+                      className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="dark:text-slate-300">Longitud</Label>
+                    <Input
+                      type="number" step="any"
+                      value={form.location.lng}
+                      onChange={e => setForm(p => ({ ...p, location: { ...p.location, lng: e.target.value } }))}
+                      placeholder="-57.6470"
+                      className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="dark:text-slate-300">Canal / Descripción</Label>
-                  <Input
-                    value={form.channel}
-                    onChange={e => setForm(p => ({ ...p, channel: e.target.value }))}
-                    placeholder="Canal 1 - Entrada"
-                    className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-                  />
-                </div>
-              </div>
-            )}
 
-            {/* Ubicación */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="dark:text-slate-300">Latitud</Label>
-                <Input
-                  type="number" step="any"
-                  value={form.location.lat}
-                  onChange={e => setForm(p => ({ ...p, location: { ...p.location, lat: e.target.value } }))}
-                  placeholder="-25.2867"
-                  className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="dark:text-slate-300">Longitud</Label>
-                <Input
-                  type="number" step="any"
-                  value={form.location.lng}
-                  onChange={e => setForm(p => ({ ...p, location: { ...p.location, lng: e.target.value } }))}
-                  placeholder="-57.6470"
-                  className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-                />
-              </div>
-            </div>
-
-            {/* Eventos HTTP Webhook */}
-            {form.alarm_protocol === "http_webhook" && (
-              <div className="space-y-1.5">
-                <Label className="dark:text-slate-300">Tipos de evento (Webhook)</Label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {EVENT_TYPES.map(et => (
-                    <label key={et.value} className="flex items-center gap-2 cursor-pointer p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={form.event_types.includes(et.value)}
-                        onChange={() => toggleEvent(et.value)}
-                        className="rounded"
-                      />
-                      <span className="text-xs text-slate-700 dark:text-slate-300">{et.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Grupo */}
-            <div className="space-y-1.5">
-              <Label className="dark:text-slate-300">Grupo (opcional)</Label>
-              <Input
-                value={form.group_name}
-                onChange={e => setForm(p => ({ ...p, group_name: e.target.value }))}
-                placeholder="ej: Edificio A, Sucursal Norte, Piso 3"
-                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-              />
-            </div>
-
-            {/* Notas */}
-            <div className="space-y-1.5">
-              <Label className="dark:text-slate-300">Notas</Label>
-              <Textarea
-                value={form.notes}
-                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                placeholder="Notas internas (no visible para clientes)"
-                rows={2}
-                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-              />
-            </div>
-
-            {/* Nombres de áreas (solo para paneles de alarma) */}
-            {(form.alarm_protocol === "adm_cid" || form.alarm_protocol === "sia_dcs") && (
-              <div className="space-y-2">
-                <div>
-                  <Label className="dark:text-slate-300">Nombres de áreas / particiones</Label>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-                    Asigná nombres a cada área del panel. Ej: "501" → "Oficina", "502" → "Depósito".
-                    Si no configurás un área, se muestra el nombre que envía el panel.
-                  </p>
-                </div>
-                {/* Lista de áreas configuradas */}
-                {Object.entries(form.areas || {}).length > 0 && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                    {Object.entries(form.areas || {}).map(([id, name], i, arr) => (
-                      <div
-                        key={id}
-                        className={`flex items-center gap-2 px-3 py-2 ${i < arr.length - 1 ? "border-b border-slate-100 dark:border-slate-800" : ""}`}
-                      >
-                        <code className="text-[11px] font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300 w-16 text-center shrink-0">{id}</code>
-                        <span className="text-xs text-slate-400 dark:text-slate-500">→</span>
-                        <span className="text-sm text-slate-800 dark:text-slate-200 flex-1">{name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setForm(p => {
-                            const next = { ...(p.areas || {}) };
-                            delete next[id];
-                            return { ...p, areas: next };
-                          })}
-                          className="text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                {(form.alarm_protocol === "adm_cid" || form.alarm_protocol === "sia_dcs") && (
+                  <div className="space-y-2">
+                    <div>
+                      <Label className="dark:text-slate-300">Áreas / particiones (podés agregar todas las que necesites)</Label>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        Asigná nombres a cada área del panel. Ej: "501" → "Oficina", "502" → "Depósito".
+                        Si no configurás un área, se muestra el nombre que envía el panel.
+                      </p>
+                    </div>
+                    {Object.entries(form.areas || {}).length > 0 && (
+                      <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                        {Object.entries(form.areas || {}).map(([id, name], i, arr) => (
+                          <div
+                            key={id}
+                            className={`flex items-center gap-2 px-3 py-2 ${i < arr.length - 1 ? "border-b border-slate-100 dark:border-slate-800" : ""}`}
+                          >
+                            <code className="text-[11px] font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300 w-16 text-center shrink-0">{id}</code>
+                            <span className="text-xs text-slate-400 dark:text-slate-500">→</span>
+                            <span className="text-sm text-slate-800 dark:text-slate-200 flex-1">{name}</span>
+                            <button
+                              type="button"
+                              onClick={() => setForm(p => {
+                                const next = { ...(p.areas || {}) };
+                                delete next[id];
+                                return { ...p, areas: next };
+                              })}
+                              className="text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newAreaId}
+                        onChange={e => setNewAreaId(e.target.value.replace(/\D/g, ""))}
+                        placeholder="ID (ej: 501)"
+                        className="w-24 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                      />
+                      <span className="text-slate-400 dark:text-slate-500 text-sm shrink-0">→</span>
+                      <Input
+                        value={newAreaName}
+                        onChange={e => setNewAreaName(e.target.value)}
+                        placeholder="Nombre (ej: Oficina principal)"
+                        className="flex-1 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && newAreaId && newAreaName.trim()) {
+                            e.preventDefault();
+                            setForm(p => ({ ...p, areas: { ...(p.areas || {}), [newAreaId]: newAreaName.trim() } }));
+                            setNewAreaId(""); setNewAreaName("");
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!newAreaId || !newAreaName.trim()}
+                        onClick={() => {
+                          setForm(p => ({ ...p, areas: { ...(p.areas || {}), [newAreaId]: newAreaName.trim() } }));
+                          setNewAreaId(""); setNewAreaName("");
+                        }}
+                        className="text-xs h-9 shrink-0 dark:border-slate-700 dark:text-slate-300"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" /> Agregar
+                      </Button>
+                    </div>
                   </div>
                 )}
-                {/* Agregar nueva área */}
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={newAreaId}
-                    onChange={e => setNewAreaId(e.target.value.replace(/\D/g, ""))}
-                    placeholder="ID (ej: 501)"
-                    className="w-24 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-                  />
-                  <span className="text-slate-400 dark:text-slate-500 text-sm shrink-0">→</span>
-                  <Input
-                    value={newAreaName}
-                    onChange={e => setNewAreaName(e.target.value)}
-                    placeholder="Nombre (ej: Oficina principal)"
-                    className="flex-1 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white dark:placeholder:text-slate-500"
-                    onKeyDown={e => {
-                      if (e.key === "Enter" && newAreaId && newAreaName.trim()) {
-                        e.preventDefault();
-                        setForm(p => ({ ...p, areas: { ...(p.areas || {}), [newAreaId]: newAreaName.trim() } }));
-                        setNewAreaId(""); setNewAreaName("");
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!newAreaId || !newAreaName.trim()}
-                    onClick={() => {
-                      setForm(p => ({ ...p, areas: { ...(p.areas || {}), [newAreaId]: newAreaName.trim() } }));
-                      setNewAreaId(""); setNewAreaName("");
-                    }}
-                    className="text-xs h-9 shrink-0 dark:border-slate-700 dark:text-slate-300"
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Agregar
-                  </Button>
-                </div>
-              </div>
+              </>
             )}
 
-            {/* Botones */}
-            <div className="flex gap-3 pt-2">
+            {/* ── Sub-tab: AVANZADO ────────────────────────────────────────── */}
+            {dialogTab === "advanced" && (
+              <>
+                {(form.alarm_protocol === "adm_cid" || form.alarm_protocol === "sia_dcs") ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="dark:text-slate-300">Watchdog — sin señal en</Label>
+                      <Select
+                        value={String(form.watchdog_minutes ?? 0)}
+                        onValueChange={v => setForm(p => ({ ...p, watchdog_minutes: Number(v) }))}
+                      >
+                        <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
+                          {WATCHDOG_OPTIONS.map(o => (
+                            <SelectItem key={o.value} value={String(o.value)} className="dark:text-slate-200 dark:focus:bg-slate-700">
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {(form.watchdog_minutes ?? 0) > 0 && (
+                        <label className="flex items-center gap-2 cursor-pointer mt-1">
+                          <input
+                            type="checkbox"
+                            checked={form.watchdog_notify ?? true}
+                            onChange={e => setForm(p => ({ ...p, watchdog_notify: e.target.checked }))}
+                            className="accent-rose-600 w-3.5 h-3.5"
+                          />
+                          <span className="text-xs text-slate-500 dark:text-slate-400">Crear alerta cuando sin señal</span>
+                        </label>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="dark:text-slate-300">Retención de historial</Label>
+                      <Select
+                        value={String(form.event_retention_days ?? 30)}
+                        onValueChange={v => setForm(p => ({ ...p, event_retention_days: Number(v) }))}
+                      >
+                        <SelectTrigger className="dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
+                          {RETENTION_OPTIONS.map(o => (
+                            <SelectItem key={o.value} value={String(o.value)} className="dark:text-slate-200 dark:focus:bg-slate-700">
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                    Watchdog y retención de historial solo aplican a paneles ADM-CID / SIA DC-09.
+                  </p>
+                )}
+                {editing && (
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                      Token de webhook y otras acciones de mantenimiento están disponibles en la fila del dispositivo (copiar URL, regenerar token, reglas de eventos).
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Botones (siempre visibles) */}
+            <div className="flex gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 mt-2">
               <Button variant="outline" onClick={closeForm} className="flex-1 dark:border-slate-700 dark:text-slate-300">
                 Cancelar
               </Button>
@@ -1962,7 +1964,7 @@ export default function Devices() {
 
       {/* ── REGLAS DE EVENTOS DIALOG ─────────────────────────────────────── */}
       <Dialog open={!!rulesDevice} onOpenChange={open => { if (!open) setRulesDevice(null); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto dark:bg-slate-900 dark:border-slate-800">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-900 dark:border-slate-800">
           <DialogHeader>
             <DialogTitle className="dark:text-white flex items-center gap-2">
               <Bell className="w-4 h-4 text-violet-500" strokeWidth={1.8} />
@@ -1972,124 +1974,37 @@ export default function Devices() {
 
           <div className="space-y-4 pt-2">
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Define qué hacer con cada categoría de eventos Contact ID / SIA DC-09 recibidos desde este panel.
-              Los prefijos más específicos tienen prioridad.
+              Define qué hacer con cada categoría/código Contact ID / SIA DC-09 recibido desde este panel
+              (severidad, y si representa "armado" o "desarmado"). Los prefijos más específicos tienen prioridad.
+              Esto sobreescribe, solo para este dispositivo, la plantilla de su marca.
             </p>
 
-            {/* Contact ID numérico */}
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1.5">
-                Contact ID (códigos numéricos)
-              </p>
-              <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                <div className="grid grid-cols-[1fr_160px] text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-                  <span>Categoría</span>
-                  <span className="text-center">Acción</span>
-                </div>
-                {EVENT_CATEGORIES_CID.map((cat, i) => (
-                  <div
-                    key={cat.prefix}
-                    className={`grid grid-cols-[1fr_160px] items-center px-3 py-2.5 gap-3 ${
-                      i < EVENT_CATEGORIES_CID.length - 1 ? "border-b border-slate-100 dark:border-slate-800" : ""
-                    }`}
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{cat.label}</p>
-                      {cat.description && (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{cat.description}</p>
-                      )}
-                    </div>
-                    <Select
-                      value={rulesForm[cat.prefix] || cat.defaultSeverity}
-                      onValueChange={v => setRulesForm(p => ({ ...p, [cat.prefix]: v }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                        {SEVERITY_OPTIONS.map(s => (
-                          <SelectItem key={s.value} value={s.value} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                            <span className={s.color}>{s.label}</span>
-                            <span className="text-slate-400 dark:text-slate-500 text-[10px] ml-2">{s.desc}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
-              </div>
+            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5">
+              <Tags className="w-4 h-4 text-slate-400 shrink-0" strokeWidth={1.8} />
+              <Select value={rulesBrandPick} onValueChange={setRulesBrandPick}>
+                <SelectTrigger className="h-8 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                  <SelectValue placeholder="Elegir marca…" />
+                </SelectTrigger>
+                <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
+                  {(alarmBrands.length > 0 ? alarmBrands : Object.entries(FALLBACK_BRAND_LABELS).map(([key, name]) => ({ key, name }))).map(b => (
+                    <SelectItem key={b.key} value={b.key} className="dark:text-slate-200 dark:focus:bg-slate-700">
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={loadBrandRulesIntoRulesDialog}
+                className="shrink-0 text-xs h-8 dark:border-slate-700 dark:text-slate-300"
+              >
+                Cargar de la marca
+              </Button>
             </div>
 
-            {/* SIA DC-09 alfabético */}
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1.5">
-                SIA DC-09 (códigos alphabéticos — Hikvision AX Pro, Ajax…)
-              </p>
-              <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                <div className="grid grid-cols-[1fr_160px] text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-                  <span>Categoría</span>
-                  <span className="text-center">Acción</span>
-                </div>
-                {EVENT_CATEGORIES_SIA.map((cat, i) => (
-                  <div
-                    key={cat.prefix}
-                    className={`grid grid-cols-[1fr_160px] items-center px-3 py-2.5 gap-3 ${
-                      i < EVENT_CATEGORIES_SIA.length - 1 ? "border-b border-slate-100 dark:border-slate-800" : ""
-                    }`}
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{cat.label}</p>
-                      {cat.description && (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{cat.description}</p>
-                      )}
-                    </div>
-                    <Select
-                      value={rulesForm[cat.prefix] || cat.defaultSeverity}
-                      onValueChange={v => setRulesForm(p => ({ ...p, [cat.prefix]: v }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="dark:bg-slate-800 dark:border-slate-700">
-                        {SEVERITY_OPTIONS.map(s => (
-                          <SelectItem key={s.value} value={s.value} className="dark:text-slate-200 dark:focus:bg-slate-700">
-                            <span className={s.color}>{s.label}</span>
-                            <span className="text-slate-400 dark:text-slate-500 text-[10px] ml-2">{s.desc}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Resumen visual */}
-            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3">
-              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">Vista previa</p>
-              <div className="flex flex-wrap gap-1.5">
-                {EVENT_CATEGORIES_CID.map(cat => {
-                  const sev = rulesForm[cat.prefix] || cat.defaultSeverity;
-                  return (
-                    <Badge key={cat.prefix} className={`text-[9px] border ${SEVERITY_BADGE[sev]}`}>
-                      E{cat.prefix}xx → {sev}
-                    </Badge>
-                  );
-                })}
-                {EVENT_CATEGORIES_SIA.map(cat => {
-                  const sev = rulesForm[cat.prefix] || cat.defaultSeverity;
-                  return (
-                    <Badge key={cat.prefix} className={`text-[9px] border ${SEVERITY_BADGE[sev]}`}>
-                      {cat.prefix}x → {sev}
-                    </Badge>
-                  );
-                })}
-              </div>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 flex items-start gap-1">
-                <Info className="w-3 h-3 shrink-0 mt-0.5" />
-                Ej: AT (corte energía) = categoría A → "Informativo". BA (intrusión) = categoría B → "Alarma".
-              </p>
-            </div>
+            <EventRulesEditor rules={rulesList} onChange={setRulesList} />
 
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => setRulesDevice(null)} className="flex-1 dark:border-slate-700 dark:text-slate-300">

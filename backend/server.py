@@ -15,7 +15,7 @@ from typing import Optional
 
 import socketio
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query, Body, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -46,6 +46,10 @@ from models import (
     DeviceUpdate,
     Device,
     AlarmProtocol,
+    AlarmBrandProfileCreate,
+    AlarmBrandProfileUpdate,
+    AlarmBrandProfile,
+    SYSTEM_ALARM_BRAND_KEYS,
 )
 from push import (
     ensure_vapid_keys,
@@ -425,6 +429,125 @@ _DEFAULT_SIA_SEVERITY = {
     "U": "info",    # UNK (parse fallback)
 }
 
+# Plantilla de reglas por defecto para nuevas marcas (AlarmBrandProfile.event_rules).
+# Refleja exactamente el comportamiento global histórico (_DEFAULT_CID_SEVERITY /
+# _DEFAULT_SIA_SEVERITY) para que un dispositivo sin marca asignada (o "generic")
+# se comporte igual que antes de introducir las marcas configurables.
+_CID_LABELS_SEED = {
+    "1": ("Alarmas (E1xx)", "Incendio, intrusión, pánico, médico, robo"),
+    "2": ("Bypass / Supervisión (E2xx)", "Zonas desactivadas, supervisión de señal"),
+    "3": ("Problemas / Trouble (E3xx)", "Batería baja, fallo AC, tamper, desconexión TCP/IP"),
+    "4": ("Apertura / Cierre (E4xx)", "Armado, desarmado, acceso de usuarios"),
+    "5": ("Robo / Duress (E5xx)", "Coacción y eventos de robo"),
+    "6": ("Test / Mantenimiento (E6xx)", "Prueba periódica, reset de sistema"),
+}
+_SIA_LABELS_SEED = {
+    "B": ("Intrusión SIA (BA, BV, BD…)", "Zona disparada"),
+    "F": ("Incendio SIA (FA, FT, FH…)", "Alarma de fuego y detectores de humo"),
+    "M": ("Médico SIA (MA, ME)", "Alarma médica y emergencia"),
+    "P": ("Pánico SIA (PA, PH, PB…)", "Botón de pánico, hold-up"),
+    "H": ("Emergencia SIA (HU, HA)", "Emergencia y hold-up"),
+    "S": ("Alarma social SIA (SA)", "Alarma social"),
+    "G": ("Alarma general SIA (GA)", "Alarma general del panel"),
+    "W": ("Agua / inundación SIA (WA)", "Sensor de agua"),
+    "Z": ("Zona SIA (ZA)", "Alarma de zona"),
+    "A": ("Energía SIA (AT, AR)", "Corte / restauración eléctrica"),
+    "T": ("Tamper SIA (TA, TR)", "Manipulación física del panel"),
+    "Y": ("Comunicación SIA (YX, YS, YR)", "Fallo de ruta, pérdida y restauración de señal"),
+    "CL": ("Armado (CL)", "Panel armado"),
+    "OP": ("Desarmado (OP)", "Panel desarmado"),
+    "C": ("Programación SIA (CS…)", "Inicio/fin de programación"),
+    "O": ("Programación SIA (OS…)", "Acceso de servicio técnico"),
+    "R": ("Test / Restore SIA (RP, RA…)", "Test periódico y restauraciones generales"),
+}
+
+
+def _default_brand_event_rules() -> list:
+    rules = []
+    for prefix, sev in _DEFAULT_CID_SEVERITY.items():
+        label, desc = _CID_LABELS_SEED.get(prefix, (f"Categoría {prefix}xx", None))
+        rules.append({"event_code_prefix": prefix, "severity": sev, "description": desc or label,
+                       "is_arm": False, "is_disarm": False})
+    for prefix, sev in _DEFAULT_SIA_SEVERITY.items():
+        label, desc = _SIA_LABELS_SEED.get(prefix, (prefix, None))
+        rules.append({
+            "event_code_prefix": prefix, "severity": sev, "description": desc or label,
+            "is_arm": prefix == "CL", "is_disarm": prefix == "OP",
+        })
+    return rules
+
+
+_SYSTEM_BRAND_LABELS = {
+    "hikvision_axpro": "Hikvision AX Pro",
+    "ajax": "Ajax Systems",
+    "dsc": "DSC (Johnson Controls)",
+    "paradox": "Paradox Security",
+    "bosch": "Bosch Security",
+    "texecom": "Texecom",
+    "honeywell": "Honeywell / Resideo",
+    "napco": "Napco Security",
+    "generic": "Genérico / Otro",
+}
+
+
+async def _seed_alarm_brands() -> None:
+    """Crea las marcas de panel 'de sistema' una única vez (primer arranque con
+    la colección vacía). No usa un chequeo por-key en cada arranque a propósito:
+    si el owner/admin borra una marca (p.ej. una de sistema que no usa ningún
+    dispositivo), NO queremos que reaparezca sola en el próximo restart del
+    backend. Si ya existe cualquier marca (de sistema o creada a mano), se
+    asume que la siembra inicial ya ocurrió y no se toca nada más."""
+    any_existing = await db.alarm_brands.find_one({}, {"_id": 0, "id": 1})
+    if any_existing:
+        return
+    for key in SYSTEM_ALARM_BRAND_KEYS:
+        brand = AlarmBrandProfile(
+            key=key,
+            name=_SYSTEM_BRAND_LABELS.get(key, key),
+            event_rules=_default_brand_event_rules(),
+            is_system=True,
+        )
+        try:
+            await db.alarm_brands.insert_one(brand.model_dump())
+        except Exception as exc:
+            logger.warning(f"No se pudo sembrar marca {key}: {exc}")
+
+
+def _event_qualifier(event_code: str) -> str:
+    """Extrae el qualifier normalizado de un código de evento.
+    "E381" → "381" (numérico CID), "R130" → "130", "BA" → "BA" (literal SIA).
+    """
+    code = (event_code or "").upper().strip()
+    if code and code[0] in "ER" and len(code) > 1 and code[1:2].isdigit():
+        return code[1:]
+    return code
+
+
+def _find_matching_rule(event_code: str, event_rules: list) -> Optional[dict]:
+    """Busca la regla del dispositivo/marca que matchea el evento (prefijo más
+    específico gana). Devuelve un dict normalizado {event_code_prefix, severity,
+    is_arm, is_disarm} o None si no hay ninguna regla configurada que matchee.
+    """
+    qualifier = _event_qualifier(event_code)
+    if not event_rules:
+        return None
+    sorted_rules = sorted(
+        event_rules,
+        key=lambda r: len(r.get("event_code_prefix", "") if isinstance(r, dict) else getattr(r, "event_code_prefix", "")),
+        reverse=True,
+    )
+    for rule in sorted_rules:
+        is_dict = isinstance(rule, dict)
+        prefix = rule.get("event_code_prefix", "") if is_dict else getattr(rule, "event_code_prefix", "")
+        if qualifier.startswith(prefix):
+            return {
+                "event_code_prefix": prefix,
+                "severity": (rule.get("severity", "alarm") if is_dict else getattr(rule, "severity", "alarm")),
+                "is_arm": bool(rule.get("is_arm", False) if is_dict else getattr(rule, "is_arm", False)),
+                "is_disarm": bool(rule.get("is_disarm", False) if is_dict else getattr(rule, "is_disarm", False)),
+            }
+    return None
+
 
 def _get_event_severity(event_code: str, event_rules: list) -> str:
     """
@@ -434,25 +557,11 @@ def _get_event_severity(event_code: str, event_rules: list) -> str:
     CID numérico: "381" → primer dígito "3" → info
     SIA alfabético: "BA" → primera letra "B" → alarm
     """
-    # Extraer qualifier: "E381" → "381", "R130" → "130", "BA" → "BA"
-    code = event_code.upper().strip()
-    if code and code[0] in "ER" and len(code) > 1 and code[1:2].isdigit():
-        qualifier = code[1:]   # E381 → 381 (numérico CID)
-    else:
-        qualifier = code       # BA, AT, UNK → literal SIA
+    qualifier = _event_qualifier(event_code)
 
-    # Buscar regla más específica del dispositivo (prefijo más largo gana)
-    if event_rules:
-        sorted_rules = sorted(
-            event_rules,
-            key=lambda r: len(r.get("event_code_prefix", "") if isinstance(r, dict) else getattr(r, "event_code_prefix", "")),
-            reverse=True,
-        )
-        for rule in sorted_rules:
-            prefix = rule.get("event_code_prefix", "") if isinstance(rule, dict) else getattr(rule, "event_code_prefix", "")
-            severity = rule.get("severity", "alarm") if isinstance(rule, dict) else getattr(rule, "severity", "alarm")
-            if qualifier.startswith(prefix):
-                return severity
+    matched = _find_matching_rule(event_code, event_rules)
+    if matched:
+        return matched["severity"]
 
     # Default según tipo de código
     if qualifier and qualifier[0].isdigit():
@@ -558,6 +667,7 @@ async def startup():
     await db.audit_logs.create_index("ts")
     await db.audit_logs.create_index("organization_id")
     await db.devices.create_index("alarm_account_code", sparse=True)
+    await db.alarm_brands.create_index("key", unique=True)
     # device_events: índices de consulta + TTL por campo expires_at (datetime)
     await db.device_events.create_index("device_id")
     await db.device_events.create_index("organization_id")
@@ -577,6 +687,8 @@ async def startup():
     else:
         logger.warning("⚠️ Firebase NO inicializado — FCM no enviará. Verifica backend/.firebase/service-account.json")
     await seed_initial_data(db)
+    await _seed_alarm_brands()
+    await _migrate_legacy_admin_permissions()
     logger.info("Startup seeding complete")
 
     # Iniciar TCP server ADM-CID/SIA-DCS en puerto configurado
@@ -608,6 +720,38 @@ async def get_current_user(request: Request):
     return await get_current_user_from_db(db, request)
 
 
+async def _migrate_legacy_admin_permissions() -> None:
+    """Antes de esta versión, `devices`, `tickets` y `audit` no eran permisos
+    granulares: cualquier admin podía acceder sin restricción (hardcodeado en
+    frontend y sin chequeo en backend). Para no dejar a nadie afuera de golpe
+    al activar el permiso granular, a los admins que ya existían y todavía NO
+    tienen la clave "devices" en su documento se les otorga acceso total la
+    primera vez que corre esta versión. Es idempotente (sólo toca documentos
+    viejos; los usuarios nuevos ya se crean con el shape completo)."""
+    full = {"view": True, "create": True, "edit": True, "delete": True}
+    ids = [
+        u["id"]
+        async for u in db.users.find(
+            {"role": "admin", "permissions.devices": {"$exists": False}},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    if not ids:
+        return
+    await db.users.update_many(
+        {"id": {"$in": ids}},
+        {"$set": {
+            "permissions.devices": dict(full),
+            "permissions.tickets": dict(full),
+            "permissions.audit": {"view": True, "create": False, "edit": False, "delete": False},
+        }},
+    )
+    logger.info(
+        f"Migración de permisos: {len(ids)} admin(s) recibieron devices/tickets/audit "
+        "por compatibilidad con el comportamiento anterior (sin permiso granular)."
+    )
+
+
 async def require_admin(user: dict = Depends(get_current_user)):
     if user["role"] not in ("super_admin", "admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -635,12 +779,16 @@ def _has_permission(user: dict, module: str, action: str) -> bool:
 
 
 def _client_permissions() -> dict:
+    empty = {"view": False, "create": False, "edit": False, "delete": False}
     return {
-        "dashboard": {"view": False, "create": False, "edit": False, "delete": False},
-        "alerts": {"view": False, "create": False, "edit": False, "delete": False},
-        "users": {"view": False, "create": False, "edit": False, "delete": False},
-        "organizations": {"view": False, "create": False, "edit": False, "delete": False},
-        "online_users": {"view": False, "create": False, "edit": False, "delete": False},
+        "dashboard": dict(empty),
+        "alerts": dict(empty),
+        "users": dict(empty),
+        "organizations": dict(empty),
+        "online_users": dict(empty),
+        "devices": dict(empty),
+        "tickets": dict(empty),
+        "audit": dict(empty),
     }
 
 
@@ -1443,7 +1591,7 @@ async def list_alerts(
 
 @api.get("/audit")
 async def list_audit_logs(
-    user: dict = Depends(require_admin),
+    user: dict = Depends(require_admin_permission("audit", "view")),
     limit: int = Query(150, ge=1, le=500),
     skip: int = Query(0, ge=0),
     action: Optional[str] = None,
@@ -1771,13 +1919,14 @@ async def list_tickets(
     user: dict = Depends(get_current_user),
 ):
     """
-    Admins (super_admin / admin) ven todos los tickets.
-    Clientes solo ven los propios.
+    Admins (super_admin / admin) ven todos los tickets, si tienen permiso tickets.view.
+    Clientes solo ven los propios (sin requerir permiso — es su propio soporte).
     """
     query: dict = {}
 
     if user["role"] in ("super_admin", "admin"):
-        pass  # sin restricción
+        if not _has_permission(user, "tickets", "view"):
+            raise HTTPException(status_code=403, detail="Sin permiso: tickets.view")
     else:
         query["user_id"] = user["id"]
 
@@ -1855,9 +2004,9 @@ async def add_ticket_message(
 async def update_ticket_status(
     ticket_id: str,
     payload: TicketStatusUpdate,
-    user: dict = Depends(require_admin),
+    user: dict = Depends(require_admin_permission("tickets", "edit")),
 ):
-    """Solo admins pueden cambiar el estado del ticket."""
+    """Solo admins con permiso tickets.edit pueden cambiar el estado del ticket."""
     from datetime import datetime, timezone
 
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
@@ -1896,7 +2045,7 @@ HIKV_EVENT_LABELS = {
 
 
 @api.get("/devices")
-async def list_devices(user: dict = Depends(require_admin)):
+async def list_devices(user: dict = Depends(require_admin_permission("devices", "view"))):
     """Lista todos los dispositivos. super_admin ve todos; admin ve solo los de su org."""
     query = {}
     if user.get("role") != "super_admin" and not user.get("is_owner"):
@@ -1906,7 +2055,7 @@ async def list_devices(user: dict = Depends(require_admin)):
 
 
 @api.post("/devices", status_code=201)
-async def create_device(payload: DeviceCreate, user: dict = Depends(require_admin)):
+async def create_device(payload: DeviceCreate, user: dict = Depends(require_admin_permission("devices", "create"))):
     """Registra un nuevo dispositivo y genera su token de webhook.
     Si alarm_protocol es adm_cid, auto-genera un alarm_account_code único."""
     # Verificar que la org existe
@@ -1926,7 +2075,7 @@ async def create_device(payload: DeviceCreate, user: dict = Depends(require_admi
 
 
 @api.patch("/devices/{device_id}")
-async def update_device(device_id: str, payload: DeviceUpdate, user: dict = Depends(require_admin)):
+async def update_device(device_id: str, payload: DeviceUpdate, user: dict = Depends(require_admin_permission("devices", "edit"))):
     doc = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Dispositivo no encontrado")
@@ -1952,7 +2101,7 @@ async def update_device(device_id: str, payload: DeviceUpdate, user: dict = Depe
 
 
 @api.delete("/devices/{device_id}", status_code=204)
-async def delete_device(device_id: str, user: dict = Depends(require_admin)):
+async def delete_device(device_id: str, user: dict = Depends(require_admin_permission("devices", "delete"))):
     result = await db.devices.delete_one({"id": device_id})
     if result.deleted_count == 0:
         raise HTTPException(404, "Dispositivo no encontrado")
@@ -1968,7 +2117,7 @@ async def get_device_events(
     page: int = 1,
     limit: int = 50,
     archived: bool = False,
-    user: dict = Depends(require_admin),
+    user: dict = Depends(require_admin_permission("devices", "view")),
 ):
     """Historial paginado de eventos del dispositivo."""
     skip = (page - 1) * limit
@@ -1980,7 +2129,7 @@ async def get_device_events(
 
 
 @api.post("/devices/{device_id}/events/archive-all", status_code=200)
-async def archive_device_events(device_id: str, user: dict = Depends(require_admin)):
+async def archive_device_events(device_id: str, user: dict = Depends(require_admin_permission("devices", "edit"))):
     """Archiva todos los eventos no archivados del dispositivo."""
     result = await db.device_events.update_many(
         {"device_id": device_id, "archived": False},
@@ -1990,7 +2139,7 @@ async def archive_device_events(device_id: str, user: dict = Depends(require_adm
 
 
 @api.patch("/devices/{device_id}/events/{event_id}/archive", status_code=200)
-async def archive_single_event(device_id: str, event_id: str, user: dict = Depends(require_admin)):
+async def archive_single_event(device_id: str, event_id: str, user: dict = Depends(require_admin_permission("devices", "edit"))):
     """Archiva un evento individual."""
     result = await db.device_events.update_one(
         {"id": event_id, "device_id": device_id},
@@ -2002,14 +2151,14 @@ async def archive_single_event(device_id: str, event_id: str, user: dict = Depen
 
 
 @api.delete("/devices/{device_id}/events/archived", status_code=200)
-async def delete_archived_events(device_id: str, user: dict = Depends(require_admin)):
+async def delete_archived_events(device_id: str, user: dict = Depends(require_admin_permission("devices", "delete"))):
     """Elimina permanentemente los eventos archivados del dispositivo."""
     result = await db.device_events.delete_many({"device_id": device_id, "archived": True})
     return {"deleted": result.deleted_count}
 
 
 @api.get("/devices/{device_id}/state")
-async def get_device_state(device_id: str, user: dict = Depends(require_admin)):
+async def get_device_state(device_id: str, user: dict = Depends(require_admin_permission("devices", "view"))):
     """
     Estado reconstruido del panel: último evento por zona.
     Agrupa device_events por zona y devuelve el más reciente de cada una.
@@ -2057,7 +2206,7 @@ async def get_device_state(device_id: str, user: dict = Depends(require_admin)):
 
 
 @api.post("/devices/{device_id}/regenerate-token")
-async def regenerate_token(device_id: str, user: dict = Depends(require_admin)):
+async def regenerate_token(device_id: str, user: dict = Depends(require_admin_permission("devices", "edit"))):
     """Genera un nuevo token webhook para el dispositivo."""
     doc = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not doc:
@@ -2065,6 +2214,213 @@ async def regenerate_token(device_id: str, user: dict = Depends(require_admin)):
     new_token = str(uuid.uuid4()).replace("-", "")
     await db.devices.update_one({"id": device_id}, {"$set": {"token": new_token}})
     return {"token": new_token}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ALARM BRAND PROFILES — plantillas de reglas de eventos reutilizables por marca
+# ══════════════════════════════════════════════════════════════════════════════
+def _slugify_brand(name: str) -> str:
+    slug = _re.sub(r"[^a-z0-9]+", "_", (name or "").strip().lower()).strip("_")
+    return slug or "marca"
+
+
+async def _unique_brand_key(base_key: str) -> str:
+    key = base_key
+    i = 2
+    while await db.alarm_brands.find_one({"key": key}, {"_id": 0, "id": 1}):
+        key = f"{base_key}_{i}"
+        i += 1
+    return key
+
+
+@api.get("/alarm-brands")
+async def list_alarm_brands(user: dict = Depends(require_admin_permission("devices", "view"))):
+    """Lista las marcas/paneles configurados, cada una con su plantilla de reglas
+    de eventos. Se usan como default al crear/editar un dispositivo."""
+    brands = await db.alarm_brands.find({}, {"_id": 0}).sort("name", 1).to_list(200)
+    return brands
+
+
+@api.post("/alarm-brands", status_code=201)
+async def create_alarm_brand(
+    payload: AlarmBrandProfileCreate,
+    user: dict = Depends(require_admin_permission("devices", "edit")),
+):
+    key = await _unique_brand_key(_slugify_brand(payload.name))
+    brand = AlarmBrandProfile(key=key, is_system=False, **payload.model_dump())
+    await db.alarm_brands.insert_one(brand.model_dump())
+    await write_audit(
+        db, action="alarm_brand.created", actor_id=user["id"], actor_email=user.get("email"),
+        actor_name=user.get("name"), entity_type="alarm_brand", entity_id=brand.id,
+        summary=f"Marca de panel creada: {brand.name}",
+    )
+    return brand.model_dump()
+
+
+@api.patch("/alarm-brands/{brand_id}")
+async def update_alarm_brand(
+    brand_id: str,
+    payload: AlarmBrandProfileUpdate,
+    user: dict = Depends(require_admin_permission("devices", "edit")),
+):
+    """Actualiza nombre/reglas/notas de una marca. El `key` nunca cambia una vez
+    creado (evita romper dispositivos que ya lo referencian en alarm_brand)."""
+    doc = await db.alarm_brands.find_one({"id": brand_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Marca no encontrada")
+    update = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    await db.alarm_brands.update_one({"id": brand_id}, {"$set": update})
+    updated = {**doc, **update}
+
+    await write_audit(
+        db, action="alarm_brand.updated", actor_id=user["id"], actor_email=user.get("email"),
+        actor_name=user.get("name"), entity_type="alarm_brand", entity_id=brand_id,
+        summary=f"Marca de panel actualizada: {updated.get('name')}",
+    )
+    return updated
+
+
+@api.delete("/alarm-brands/{brand_id}", status_code=204)
+async def delete_alarm_brand(
+    brand_id: str,
+    user: dict = Depends(require_admin_permission("devices", "delete")),
+):
+    doc = await db.alarm_brands.find_one({"id": brand_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Marca no encontrada")
+    in_use = await db.devices.count_documents({"alarm_brand": doc.get("key")})
+    if in_use > 0:
+        raise HTTPException(400, f"No se puede eliminar: {in_use} dispositivo(s) usan esta marca")
+    await db.alarm_brands.delete_one({"id": brand_id})
+    await write_audit(
+        db, action="alarm_brand.deleted", actor_id=user["id"], actor_email=user.get("email"),
+        actor_name=user.get("name"), entity_type="alarm_brand", entity_id=brand_id,
+        summary=f"Marca de panel eliminada: {doc.get('name')}",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOGS EN VIVO — lectura de logs del backend (solo lectura, sin persistencia)
+# ══════════════════════════════════════════════════════════════════════════════
+LOG_SOURCES = {
+    "err": os.environ.get("LOG_FILE_ERR", "/var/log/boton-panico/backend.err.log"),
+    "out": os.environ.get("LOG_FILE_OUT", "/var/log/boton-panico/backend.log"),
+}
+
+
+async def _get_user_for_log_stream(request: Request, access_token: Optional[str] = None) -> dict:
+    """Auth para el endpoint de logs. EventSource del browser no puede mandar
+    headers custom, así que además de cookie/Bearer aceptamos ?access_token=
+    como fallback (mismo alcance que el token normal, solo lectura de logs).
+    """
+    token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        token = access_token
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = decode_token(token)
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+def _tail_last_lines(path: str, n: int, max_bytes: int = 2_000_000) -> list:
+    """Lee las últimas `n` líneas de un archivo sin cargarlo entero (lee como
+    máximo max_bytes desde el final)."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            f.seek(max(0, size - max_bytes))
+            data = f.read()
+        lines = data.decode("utf-8", errors="ignore").splitlines()
+        return lines[-n:] if n > 0 else []
+    except (FileNotFoundError, OSError):
+        return []
+
+
+@api.get("/system/logs/stream", include_in_schema=False)
+async def stream_logs(
+    request: Request,
+    source: str = Query("err", pattern="^(err|out)$"),
+    q: Optional[str] = None,
+    lines: int = Query(200, ge=0, le=2000),
+    access_token: Optional[str] = Query(None),
+):
+    """Server-Sent Events: tail -f de solo lectura sobre el log del backend.
+    No persiste nada — solo re-emite líneas nuevas mientras la conexión esté
+    abierta. Requiere rol admin/super_admin + permiso devices.view (vive en la
+    pestaña Dispositivos → Logs). Filtro `q` = substring case-insensitive
+    (ej: "Alarm TCP", "Watchdog", "FCM").
+    """
+    user = await _get_user_for_log_stream(request, access_token)
+    if user.get("role") not in ("super_admin", "admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if not _has_permission(user, "devices", "view"):
+        raise HTTPException(status_code=403, detail="Sin permiso: devices.view")
+
+    path = LOG_SOURCES.get(source)
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Log no disponible en este servidor")
+
+    needle = (q or "").strip().lower()
+
+    async def event_generator():
+        # Historial inicial (tail -n)
+        for line in _tail_last_lines(path, lines):
+            if not needle or needle in line.lower():
+                yield f"data: {line}\n\n"
+        yield "event: ready\ndata: {}\n\n"
+
+        try:
+            pos = os.path.getsize(path)
+        except OSError:
+            pos = 0
+
+        pending = ""  # línea parcial sin terminar de escribirse, se completa en el próximo tick
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                size = os.path.getsize(path)
+                if size < pos:
+                    # Rotación de log → volver a leer desde el inicio
+                    pos = 0
+                    pending = ""
+                if size > pos:
+                    with open(path, "rb") as f:
+                        f.seek(pos)
+                        chunk = f.read(size - pos)
+                    pos = size
+                    text = pending + chunk.decode("utf-8", errors="ignore")
+                    # Solo emitimos líneas ya terminadas en \n; lo que quede
+                    # incompleto (última línea aún escribiéndose) se guarda.
+                    ends_complete = text.endswith("\n")
+                    parts = text.splitlines()
+                    pending = "" if ends_complete else (parts.pop() if parts else "")
+                    for line in parts:
+                        if not line:
+                            continue
+                        if not needle or needle in line.lower():
+                            yield f"data: {line}\n\n"
+                else:
+                    # Keepalive para que proxies no corten la conexión
+                    yield ": keepalive\n\n"
+            except OSError:
+                pass
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 # ── Webhook público — Hikvision POST XML ──────────────────────────────────
@@ -2391,9 +2747,18 @@ async def _process_alarm_event(parsed: dict, device: dict) -> None:
         if org_id:
             await sio.emit("device:event_received", live_event, room=f"org:{org_id}")
 
-    # ── Capturar estado armado/desarmado (CL = armado, OP = desarmado) ──────
-    if event_code in ("CL", "OP"):
-        arm_state = "armed" if event_code == "CL" else "disarmed"
+    # ── Capturar estado armado/desarmado ──────────────────────────────────
+    # Preferimos las reglas configuradas por marca/dispositivo (is_arm / is_disarm).
+    # Si no hay ninguna regla marcada, caemos al comportamiento legado (CL/OP de SIA).
+    matched_rule = _find_matching_rule(event_code, event_rules)
+    is_arm_event = bool(matched_rule and matched_rule.get("is_arm"))
+    is_disarm_event = bool(matched_rule and matched_rule.get("is_disarm"))
+    if not matched_rule and event_code in ("CL", "OP"):
+        is_arm_event = event_code == "CL"
+        is_disarm_event = event_code == "OP"
+
+    if is_arm_event or is_disarm_event:
+        arm_state = "armed" if is_arm_event else "disarmed"
         await db.devices.update_one(
             {"id": device["id"]},
             {"$set": {"arm_state": arm_state, "arm_state_at": now_iso}},
@@ -2612,7 +2977,7 @@ async def handle_adm_cid_client(reader: asyncio.StreamReader, writer: asyncio.St
         logger.info(f"Alarm TCP: desconectado {addr}")
 
 @api.get("/system/alarm-config")
-async def get_alarm_config(user: dict = Depends(require_admin)):
+async def get_alarm_config(user: dict = Depends(require_admin_permission("devices", "view"))):
     """Retorna configuración del servidor para recepción de alarmas (ADM-CID y HTTP webhook)."""
     return {
         "adm_cid_port": ADM_CID_PORT,

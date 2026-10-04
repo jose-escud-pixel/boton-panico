@@ -13,7 +13,6 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
-import { Checkbox } from "../../components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,91 +28,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { Plus, Pencil, Trash2, Unlock, Smartphone } from "lucide-react";
+import { Plus, Pencil, Trash2, Unlock, Smartphone, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useOrg } from "../../context/OrgContext";
 import ChipFilter from "../../components/ChipFilter";
+import UserPermissionsDialog, {
+  defaultAdminPermissions,
+  defaultClientPermissions,
+  defaultSuperAdminPermissions,
+  normalizePermissions,
+} from "../../components/UserPermissionsDialog";
 
 const ROLE_STYLE = {
   super_admin: "bg-rose-50 text-rose-700 border-rose-200",
   admin: "bg-amber-50 text-amber-700 border-amber-200",
   client: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700",
 };
-
-const PERMISSION_MODULES = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "alerts", label: "Alertas" },
-  { key: "users", label: "Usuarios" },
-  { key: "organizations", label: "Organizaciones" },
-  { key: "online_users", label: "Usuarios en línea" },
-];
-const PERMISSION_ACTIONS = ["view", "create", "edit", "delete"];
-
-function emptyCrud(viewDefault = false) {
-  return { view: !!viewDefault, create: false, edit: false, delete: false };
-}
-
-function defaultAdminPermissions() {
-  return {
-    dashboard: emptyCrud(true),
-    alerts: emptyCrud(true),
-    users: emptyCrud(false),
-    organizations: emptyCrud(false),
-    online_users: emptyCrud(false),
-  };
-}
-
-function defaultClientPermissions() {
-  return {
-    dashboard: emptyCrud(false),
-    alerts: emptyCrud(false),
-    users: emptyCrud(false),
-    organizations: emptyCrud(false),
-    online_users: emptyCrud(false),
-  };
-}
-
-function defaultSuperAdminPermissions() {
-  return PERMISSION_MODULES.reduce((acc, m) => {
-    acc[m.key] = { view: true, create: true, edit: true, delete: true };
-    return acc;
-  }, {});
-}
-
-function normalizePermissions(perms, role) {
-  if (role === "client") return defaultClientPermissions();
-  if (role === "super_admin") return defaultSuperAdminPermissions();
-  const p = perms || {};
-  const hasModules = PERMISSION_MODULES.some((m) => p[m.key]);
-  if (hasModules) {
-    const out = defaultAdminPermissions();
-    PERMISSION_MODULES.forEach((m) => {
-      const src = p[m.key] || {};
-      out[m.key] = {
-        view: !!src.view,
-        create: !!src.create,
-        edit: !!src.edit,
-        delete: !!src.delete,
-      };
-    });
-    return out;
-  }
-  // Compatibilidad payload viejo (create/edit/delete/view global)
-  if (["view", "create", "edit", "delete"].some((k) => Object.prototype.hasOwnProperty.call(p, k))) {
-    const flat = {
-      view: !!p.view,
-      create: !!p.create,
-      edit: !!p.edit,
-      delete: !!p.delete,
-    };
-    const out = defaultAdminPermissions();
-    PERMISSION_MODULES.forEach((m) => { out[m.key] = { ...flat }; });
-    out.dashboard = { view: flat.view, create: false, edit: false, delete: false };
-    out.online_users = { view: flat.view, create: false, edit: false, delete: false };
-    return out;
-  }
-  return defaultAdminPermissions();
-}
 
 export default function Users() {
   const { user: me } = useAuth();
@@ -125,6 +55,8 @@ export default function Users() {
   const [form, setForm] = useState(initialForm());
   const [saving, setSaving] = useState(false);
   const [chips, setChips] = useState([]);
+  const [permsUser, setPermsUser] = useState(null);
+  const [permsOpen, setPermsOpen] = useState(false);
 
   function initialForm() {
     return {
@@ -414,6 +346,18 @@ export default function Users() {
                     )}
                   </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
+                    {u.role === "admin" && canModify && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => { setPermsUser(u); setPermsOpen(true); }}
+                        className="text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-950/40"
+                        title="Permisos granulares"
+                        data-testid="permissions-user-button"
+                      >
+                        <ShieldCheck className="w-4 h-4" strokeWidth={1.8} />
+                      </Button>
+                    )}
                     {u.device_id && canModify && (
                       <Button
                         size="sm"
@@ -667,38 +611,13 @@ export default function Users() {
             </div>
 
             {form.role === "admin" && (
-              <div>
-                <Label className="overline block mb-2">Permisos por módulo</Label>
-                <div className="space-y-2">
-                  {PERMISSION_MODULES.map((m) => (
-                    <div key={m.key} className="border border-slate-200 dark:border-slate-700 rounded-md p-2">
-                      <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">{m.label}</div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {PERMISSION_ACTIONS.map((a) => (
-                          <label key={`${m.key}-${a}`} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-                            <Checkbox
-                              checked={!!form.permissions?.[m.key]?.[a]}
-                              onCheckedChange={(c) =>
-                                setForm({
-                                  ...form,
-                                  permissions: {
-                                    ...form.permissions,
-                                    [m.key]: {
-                                      ...(form.permissions?.[m.key] || emptyCrud()),
-                                      [a]: !!c,
-                                    },
-                                  },
-                                })
-                              }
-                              data-testid={`perm-${m.key}-${a}-checkbox`}
-                            />
-                            <span className="capitalize">{a}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="text-xs rounded-md border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 p-3 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.8} />
+                <span>
+                  {editing
+                    ? <>Los permisos granulares por módulo se editan desde el ícono <ShieldCheck className="w-3 h-3 inline" strokeWidth={2} /> en la fila del usuario, una vez creado.</>
+                    : "Al crear el usuario se le asignan permisos básicos (Dashboard y Alertas en modo lectura). Después de creado, ajustá el detalle desde el ícono de permisos en su fila."}
+                </span>
               </div>
             )}
             {form.role === "client" && (
@@ -728,6 +647,13 @@ export default function Users() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <UserPermissionsDialog
+        open={permsOpen}
+        onOpenChange={(o) => { setPermsOpen(o); if (!o) setPermsUser(null); }}
+        targetUser={permsUser}
+        onSaved={load}
+      />
     </div>
   );
 }

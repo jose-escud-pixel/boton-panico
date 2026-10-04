@@ -34,7 +34,7 @@ const navItems = [
   { to: "/admin/users", icon: Users, label: "Usuarios", test: "nav-users", module: "users" },
   { to: "/admin/online-users", icon: Activity, label: "En línea", test: "nav-online-users", module: "online_users" },
   { to: "/admin/organizations", icon: Building2, label: "Organizaciones", test: "nav-organizations", module: "organizations" },
-  { to: "/admin/audit", icon: ClipboardList, label: "Auditoría", test: "nav-audit", module: "alerts" },
+  { to: "/admin/audit", icon: ClipboardList, label: "Auditoría", test: "nav-audit", module: "audit" },
   { to: "/admin/tickets", icon: LifeBuoy, label: "Tickets", test: "nav-tickets", module: "tickets" },
 ];
 
@@ -100,9 +100,6 @@ export default function AdminLayout() {
     if (!user) return false;
     if (user.role === "super_admin" || user.is_owner) return true;
     if (user.role !== "admin") return false;
-    // Tickets siempre visible para todos los admins (sin permiso especial)
-    if (module === "tickets") return true;
-    if (module === "devices") return true;
     const p = user.permissions || {};
     if (typeof p.view === "boolean") return p.view; // legacy flat
     return !!p?.[module]?.view;

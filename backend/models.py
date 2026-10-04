@@ -56,6 +56,9 @@ class Permissions(BaseModel):
     users: CrudPermissions = Field(default_factory=CrudPermissions)
     organizations: CrudPermissions = Field(default_factory=CrudPermissions)
     online_users: CrudPermissions = Field(default_factory=CrudPermissions)
+    devices: CrudPermissions = Field(default_factory=CrudPermissions)
+    tickets: CrudPermissions = Field(default_factory=CrudPermissions)
+    audit: CrudPermissions = Field(default_factory=CrudPermissions)
 
     @model_validator(mode="before")
     @classmethod
@@ -63,7 +66,10 @@ class Permissions(BaseModel):
         if not isinstance(value, dict):
             return value
         has_modules = any(
-            k in value for k in ("dashboard", "alerts", "users", "organizations", "online_users")
+            k in value for k in (
+                "dashboard", "alerts", "users", "organizations", "online_users",
+                "devices", "tickets", "audit",
+            )
         )
         if has_modules:
             return value
@@ -80,6 +86,9 @@ class Permissions(BaseModel):
                 "users": dict(flat),
                 "organizations": dict(flat),
                 "online_users": {"view": flat["view"], "create": False, "edit": False, "delete": False},
+                "devices": dict(flat),
+                "tickets": dict(flat),
+                "audit": {"view": flat["view"], "create": False, "edit": False, "delete": False},
             }
         return value
 
@@ -277,13 +286,26 @@ EventSeverity = Literal["alarm", "warning", "info", "ignore"]
 
 
 class EventRule(BaseModel):
-    """Regla de enrutamiento de eventos Contact ID / SIA DC-09 por prefijo de código."""
+    """Regla de enrutamiento de eventos Contact ID / SIA DC-09 por prefijo de código.
+
+    Se usa tanto a nivel de `Device.event_rules` (override individual) como a nivel
+    de `AlarmBrandProfile.event_rules` (plantilla por marca). `is_arm` / `is_disarm`
+    marcan qué código representa "panel armado" / "panel desarmado" — antes esto
+    estaba hardcodeado a los códigos SIA "CL"/"OP"; ahora es configurable por marca
+    o por dispositivo para soportar códigos Contact ID u otras marcas.
+    """
     event_code_prefix: str = Field(min_length=1, max_length=4)
     # Prefijos Contact ID: "1"=alarmas, "2"=bypass, "3"=trouble, "4"=open/close, "6"=test
     severity: EventSeverity
     description: Optional[str] = None  # Etiqueta visible en UI
+    is_arm: bool = False      # Este código representa "panel armado"
+    is_disarm: bool = False   # Este código representa "panel desarmado"
 
-AlarmBrand = Literal[
+
+# Slugs de marcas "de sistema" sembradas por defecto (no se pueden eliminar,
+# sólo editar sus reglas). El usuario puede crear marcas adicionales libremente,
+# por lo que ya no es un Literal cerrado sino un string (ver AlarmBrandProfile).
+SYSTEM_ALARM_BRAND_KEYS = [
     "hikvision_axpro",  # Hikvision AX Pro
     "ajax",             # Ajax Systems
     "dsc",              # DSC (Johnson Controls)
@@ -294,6 +316,33 @@ AlarmBrand = Literal[
     "napco",            # Napco Security
     "generic",          # Genérico / otro
 ]
+
+
+# ---------- Alarm Brand Profiles ----------
+class AlarmBrandProfileCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    protocol_hint: Optional[AlarmProtocol] = None  # sólo informativo/sugerido
+    event_rules: List[EventRule] = Field(default_factory=list)
+    notes: Optional[str] = None
+
+
+class AlarmBrandProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    protocol_hint: Optional[AlarmProtocol] = None
+    event_rules: Optional[List[EventRule]] = None
+    notes: Optional[str] = None
+
+
+class AlarmBrandProfile(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    key: str  # slug único derivado del nombre (o el de sistema); usado en Device.alarm_brand
+    name: str
+    protocol_hint: Optional[AlarmProtocol] = None
+    event_rules: List[EventRule] = Field(default_factory=list)
+    notes: Optional[str] = None
+    is_system: bool = False  # sembrada por el sistema — igual se puede renombrar/eliminar si no está en uso
+    created_at: str = Field(default_factory=utc_now_iso)
 
 
 class DeviceLocation(BaseModel):
@@ -311,13 +360,14 @@ class DeviceCreate(BaseModel):
     event_types: List[HikvisionEventType] = Field(default_factory=lambda: ["VMD", "linedetection", "fielddetection", "IO"])
     location: Optional[DeviceLocation] = None
     alarm_protocol: AlarmProtocol = "http_webhook"   # http_webhook o adm_cid
-    alarm_brand: AlarmBrand = "generic"               # Marca del panel de alarma
+    alarm_brand: str = "generic"                      # Marca del panel (key de AlarmBrandProfile)
     group_name: Optional[str] = None                  # Grupo visual (ej: "Edificio A", "Piso 3")
     notes: Optional[str] = None
     watchdog_minutes: int = 0
     watchdog_notify: bool = True
     event_retention_days: int = 30
     areas: Dict[str, str] = Field(default_factory=dict)  # { "area_id": "Nombre personalizado" }
+    event_rules: List[EventRule] = Field(default_factory=list)  # opcional: precargadas desde una marca
 
 
 class DeviceUpdate(BaseModel):
@@ -330,7 +380,7 @@ class DeviceUpdate(BaseModel):
     location: Optional[DeviceLocation] = None
     status: Optional[DeviceStatus] = None
     alarm_protocol: Optional[AlarmProtocol] = None
-    alarm_brand: Optional[AlarmBrand] = None
+    alarm_brand: Optional[str] = None
     group_name: Optional[str] = None
     notes: Optional[str] = None
     event_rules: Optional[List[EventRule]] = None          # Reglas de enrutamiento ADM-CID/SIA
@@ -354,7 +404,7 @@ class Device(BaseModel):
     location: Optional[DeviceLocation] = None
     status: DeviceStatus = "active"
     alarm_protocol: AlarmProtocol = "http_webhook"
-    alarm_brand: AlarmBrand = "generic"
+    alarm_brand: str = "generic"
     alarm_account_code: Optional[str] = None  # Código ADM-CID de 4 chars hex (auto-generado)
     group_name: Optional[str] = None          # Grupo visual (ej: "Edificio A")
     event_rules: List[EventRule] = Field(default_factory=list)  # Reglas Contact ID/SIA → severidad
